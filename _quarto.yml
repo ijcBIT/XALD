@@ -2,8 +2,8 @@ project:
   type: book
 
 book:
-  title: "SG0002"
-  author: "Jane Doe"
+  title: "Methylation array analysis"
+  author: "Izar de Villasante"
   date: "1/31/2023"
   chapters:
     - index.qmd

@@ -56,10 +56,10 @@ samplesheets <- c(
 values <- tibble::tibble( # Use all possible combinations of input settings.
   method_function = rlang::syms(c("noob")),#, "pq","funn","noob_pq","Em")),
   data_paths = samplesheets,
-  data_names = c("full"),
-  Contrasts = paste(c("Sample_GroupControl_No-Sample_GroupExon1_No","Sample_GroupControl_No-Sample_GroupTAT_No" , "Sample_GroupExon1_No-Sample_GroupTAT_No",
-                "Sample_GroupControl_No-Sample_GroupControl_Dox","Sample_GroupExon1_No-Sample_GroupExon1_Dox" , "Sample_GroupTAT_No-Sample_GroupTAT_Dox"),
-                collapse = ";")
+  data_names = c("full")
+  # Contrasts = paste(c("Sample_GroupControl_No-Sample_GroupExon1_No","Sample_GroupControl_No-Sample_GroupTAT_No" , "Sample_GroupExon1_No-Sample_GroupTAT_No",
+                # "Sample_GroupControl_No-Sample_GroupControl_Dox","Sample_GroupExon1_No-Sample_GroupExon1_Dox" , "Sample_GroupTAT_No-Sample_GroupTAT_Dox"),
+                # collapse = ";")
   # model=c("Sample_Group",)
 )
 
@@ -68,53 +68,70 @@ values <- tibble::tibble( # Use all possible combinations of input settings.
 targets <- tar_map(
   values = values,
   names = data_names, #"data_source", # Select columns from `values` for target names.
-  tar_target(fparams,make_results_dirs(subf=data_names, results_folder = results_folder, analysis_folder = analysis_folder)),
-  tar_target(samplesheet_path, data_paths, format = "file"),
-  tar_target(samplesheet, readRDS(samplesheet_path)),
-  tar_target(ss,samplesheet[-1,]),
-  tar_target(category,samplesheet[1,]),
-  tar_target(nrgSet, minfi::read.metharray.exp(base = NULL, targets = ss, extended = T,
-                                       recursive = FALSE, verbose = FALSE, force = T)),
-  tar_target(rgSet,name_rgset(nrgSet,ss)),
+  tar_target(fparams,                                                            # Save paths & parameters
+             make_results_dirs(subf=data_names, results_folder = results_folder,
+                               analysis_folder = analysis_folder)),
+  
+  tar_target(samplesheet_path, data_paths, format = "file"),                     # Checks samplesheet for changes
+  tar_target(samplesheet, readRDS(samplesheet_path)),                            # Reads sample sheet
+  tar_target(ss,samplesheet[-1,]),                                               # Strips category tags
+  tar_target(category,
+             data.table::as.data.table(t(samplesheet[1,]),keep.rownames = T)),   # Category tags dict
+  tar_target(nrgSet,                                                             # Reads idats
+             minfi::read.metharray.exp(
+               base = NULL, targets = ss,
+               extended = T,recursive = FALSE, verbose = FALSE, force = T)),
+  tar_target(rgSet,name_rgset(nrgSet,ss)),                                       # Makes rgSet rownames == ss colnames
   # Qc report:
-  tar_target(QC_plots, qc(rgSet,sampGroups = "Sample_Group",sampNames="barcode", qc_folder = fparams[["qc_folder"]])),
+  tar_target(QC_plots, qc(                                                       # Makes qc plots:qcReport, density, beanplot, mean_qc 
+    rgSet,sampGroups = "Sample_Group",sampNames="barcode",
+    qc_folder = fparams[["qc_folder"]])),
 
   # Calculate purity:
-  tar_target(purity, cnv.methyl::purify(myLoad=rgSet)),
-  tar_target(filtered, filter(targets=ss, rgSet=rgSet,sampGroups="Sample_Group", qc_folder = fparams[["qc_folder"]])),
+  tar_target(purity, cnv.methyl::purify(myLoad=rgSet)),                          # Calculates tumor purity as fraction of overall sample [0-1].
+  tar_target(filtered, filter(                                                   # 1.- Filters: -probes: pval<0.01 
+    targets=ss, rgSet=rgSet,sampGroups="Sample_Group",                           #              -samples: 10% probes fail
+    qc_folder = fparams[["qc_folder"]])),                                        # 2.- Plots: Sample p.values barplot (colMeans)
 
-  tar_target(normalize, method_function(filtered)),
-  tar_target(clean, prep(normalize)),
-  tar_target(ss_clean, droplevels.data.frame( cbind(clean@colData,purity))),
-  tar_target(save_ss_clean,write.table(ss_clean,paste0(fparams[["ss_clean_path"]],"/","ss_clean.csv"),quote = F,sep = ",") ),
+  tar_target(normalize, method_function(filtered)),                              # Apply normalization; default --> Noob
+  tar_target(clean, prep(normalize)),                                            # Preprocess: remove snps, remove Xreactive, Sex pred & removal
+  tar_target(ss_clean,addcol(clean,purity)),                                     # Add tumor purity to sample sheet
+  tar_target(save_ss_clean,                                                      # Save updated sample sheet
+             write.table(ss_clean,paste0(fparams[["ss_clean_path"]],"/",
+                                         "ss_clean.csv"),quote = F,sep = ",")),
 
-  tar_target(plotvars, c(data.table::last(colnames(ss_clean)),"predictedSex",colnames(as.matrix(category[1,]))[as.matrix(category[1,])%in%c("batch","covs")])),
+  tar_target(plotvars,                                                           # Variables to plot on correlation matrix
+             c(data.table::last(colnames(ss_clean)),"predictedSex",
+               category[V1 %in% c("ids","batch"),rn])),
 
-  tar_target(ann, minfi::getAnnotation(clean)),
-  tar_target(betas, minfi::getBeta(clean),memory = "persistent"),
-  tar_target(top,top_beta(betas,n=1000)),
-  tar_target(pca, pca_res(top)),
+  tar_target(ann, minfi::getAnnotation(clean)),                                  # Annotate rgSet
+  tar_target(betas, minfi::getBeta(clean),memory = "persistent"),                # Calculate beta values
+  tar_target(top,top_beta(betas,n=1000)),                                        # subsample for PCA & ploting
+  tar_target(pca, pca_res(top)),                                                 # PCA
 
-  tar_target(pca_corrplot,corpca(beta_top100 = top,
+  tar_target(pca_corrplot,corpca(beta_top100 = top,                              # Correlation plot
                                  metadata=ss_clean[,plotvars],
                                  title=paste0("PC1-6 correlations with ",data_names," clinical vars"))
   ),
-  tar_target(save_pca_corrplot,save_plot(object=pca_corrplot,path=fparams[["corrplot_folder"]],filename=paste0(data_names,"_pca_corrplot.png"))),
+  tar_target(save_pca_corrplot,                                                  # Save correlation plot
+             save_plot(object=pca_corrplot,path=fparams[["corrplot_folder"]],
+                       filename=paste0(data_names,"_pca_corrplot.png"))),
 
-  tar_target(bplots, bplot(pca,
+  tar_target(bplots, bplot(pca,                                                  # Bi plots for PCA components
                            ss=ss_clean,
-                           colgroup=colnames(as.matrix(category[1,]))[as.matrix(category[1,])%in%c("batch","covs")],
+                           colgroup=category[V1 %in% c("covs","batch"),rn],
                            s="Type",
                            cols=NULL,
                            folder = fparams$bplots_folder)
   ),
 
-  tar_target(model, mod(object = betas, group_var = "Sample_Group", contrasts = Contrasts,
-                        covs= colnames(as.matrix(category[1,]))[as.matrix(category[1,])%in%c("batch")],
+  tar_target(model, mod(object = betas, group_var = "Sample_Group",              # Model with limma for diff meth 
+                        contrasts = NULL,singular=T,
+                        covs= category[V1 %in% c("batch"),rn],
                         metadata = ss_clean)
   ),
 
-  tar_target(dmps_mod1, cnv.methyl::DMPextr(fit = model,
+  tar_target(dmps_mod1, cnv.methyl::DMPextr(fit = model,                         # Toptable & stats
                                             ContrastsDM = colnames(model$contrasts),
                                             beta_normalized = betas,
                                             p.value = 0.95,
@@ -122,38 +139,51 @@ targets <- tar_map(
                                             ann = ann,
                                             writeOut = F
   )),
-  tar_target(dmp_battery,apply_filter_dmps(dmps = dmps_mod1,path=paste0(fparams$dmp_folder,data_names))),
-  tar_target(dmps_f , filter_dmps(dmps_mod1, p.value = 0.01, mDiff = 0.4)),
-  # tar_target(save_dmps, writexl::write_xlsx(dmps_mod1,paste0(fparams$dmp_folder,data_names,"_dmps.xlsx"))),
-  tar_target(save_dmps, data.table::fwrite(dmps_f,paste0(fparams$dmp_folder,data_names,"_dmps.txt"))),
-  tar_target(betas_DIF,betasdmps(betas,dmps_f,rgSet)),
-  tar_target(betas_DIF_full,betasdmps(betas,ann,rgSet)),
+  tar_target(dmp_battery,                                                        # DMPs distribution along params.
+             apply_filter_dmps(
+               dmps = dmps_mod1,path=paste0(fparams$dmp_folder,data_names))),
+  tar_target(dmps_f , filter_dmps(dmps_mod1, p.value = 0.01, mDiff = 0.4)),      # Choose filter for DMPs
+  tar_target(save_dmps, data.table::fwrite(
+    dmps_f,paste0(fparams$dmp_folder,data_names,"_dmps.txt"))),                  # Save DMPs
+  tar_target(betas_DIF,betasdmps(betas,dmps_f,rgSet)),                           # 
+  tar_target(betas_DIF_full,betasdmps(betas,ann,rgSet)),                         #
   # tar_target(write_betas_DIF, writexl::write_xlsx(betas_DIF,paste0(fparams$dmp_folder,"betas_DIF_",data_names,".xlsx"))),
   # tar_target(write_betas_DIF_full, writexl::write_xlsx(betas_DIF_full,paste0(fparams$dmp_folder,"betas_DIF_full_",data_names,".xlsx"))),
 
 
-  tar_target(dmps_summary,summary_dmps(dmps_mod1, dir = fparams$dmp_folder,name=data_names)),
-  tar_target(dmpplot_mod1, plotDMP(dmps_f,path=fparams[["dmpplots_folder"]])),
+  tar_target(dmps_summary,                                                       # Summary statistics for DMPs
+             summary_dmps(dmps_mod1, dir = fparams$dmp_folder,name=data_names)),
+  tar_target(dmpplot_mod1, plotDMP(dmps_f,path=fparams[["dmpplots_folder"]])),   # Barplots hipo/hyper, genomic region, CpG islands.
 
-  # tar_target(dmrs, find_dmrs(betas,model,pcutoff = 0.01, betacutoff = 0.25, min.cpg=5)),
-  tar_target(dmrs1, find_dmrs(betas,model,fdr = 0.25, p.value = 0.1,betacutoff = 0.1, min.cpg=3)),
-  tar_target(dmrs_battery,apply_filter_dmrs(dmrs = dmrs1,path=paste0(fparams$dmrs_folder,data_names))),
-  tar_target(dmrs_par_plot,apply_filter_dmrs),
-  tar_target(dmrs, filter_dmrs(dmrs1,p.value = 0.1, mDiff = 0.25, min.cpg=3)),
-  
-  tar_target(save_dmrs,
-             writexl::write_xlsx(as.data.frame(dmrs),
-                                 paste0(fparams$dmrs_folder,"_",data_names,".xlsx"))),
+  tar_target(dmrs1,                                                              # Finds DMRs with dmrcate
+             find_dmrs(betas,model,
+                       fdr = 0.25, p.value = 0.1,betacutoff = 0.1, min.cpg=3)),
+  tar_target(dmrs_battery,                                                       # DMRs distribution along params
+             apply_filter_dmrs(
+               dmrs = dmrs1,path=paste0(fparams$dmrs_folder,data_names))),
+  tar_target(dmrs, filter_dmrs(dmrs1,p.value = 0.1, mDiff = 0.25, min.cpg=3)),   # Filters DMRs
+  tar_target(save_dmrs,                                                          # Saves DMRs
+             writexl::write_xlsx(
+               dmrs, paste0(fparams$dmrs_folder,"_",data_names,".xlsx"))),
   tar_target(top4dmrs, {top4<-dmrs[,head(.SD,4),by=Contrast,
                                    .SDcols=c("Contrast","seqnames","start","no.cpgs","HMFDR","maxdiff","meandiff","overlapping.genes")]
   
     data.table::fwrite(top4,paste0(fparams$dmrs_folder,"_top4",data_names,".csv"))
     }),
-  tar_target(vennDiags,venns(dmrs,groupvar="Contrast",res=paste0(fparams$dmrs_folder,"/VENNS/"))),
-  tar_target(dmrs_summary, summary_dmrs(dmrs,path=paste0(fparams$dmrs_folder,"full_dmrs_summary",data_names,".csv"))),
-  tar_target(allpathways, gopath(dmrs,all.cpg=rownames(betas),n=Inf,ann=ann)),
-  tar_target(hyperpathways, gopath(dmrs[meandiff>0,],all.cpg=rownames(betas),n=Inf,ann=ann,savepath=paste0(fparams$pathway_folder,"pathways_hyper.csv"))),
-  tar_target(hypopathways, gopath(dmrs[meandiff<0,],all.cpg=rownames(betas),n=Inf,ann=ann,savepath=paste0(fparams$pathway_folder,"pathways_hypo.csv"))),
+  tar_target(dmrs_summary,                                                       # Summary stats for DMRs
+             summary_dmrs(
+               dmrs,path=paste0(fparams$dmrs_folder,"full_dmrs_summary",data_names,".csv"))),
+  tar_target(vennDiags,  error ="continue",                                      # venn plot for genes comparing groupvar(contrasts?)
+             venns(
+               dmrs,groupvar="Contrast",res=paste0(fparams$dmrs_folder,"/VENNS/"))),
+  
+  tar_target(allpathways, gopath(dmrs,all.cpg=rownames(betas),n=Inf,ann=ann)),   # Pathways with all
+  tar_target(hyperpathways,                                                      # Pathways hyper
+             gopath(dmrs[meandiff>0,],
+             all.cpg=rownames(betas),n=Inf,ann=ann,savepath=paste0(fparams$pathway_folder,"pathways_hyper.csv"))),
+  tar_target(hypopathways,                                                       # Pathways with hypo
+             gopath(dmrs[meandiff<0,],
+                    all.cpg=rownames(betas),n=Inf,ann=ann,savepath=paste0(fparams$pathway_folder,"pathways_hypo.csv"))),
   #
   # tar_target(save_gopath,
   #            writexl::write_xlsx(pathways[FDR<1,],

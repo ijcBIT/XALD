@@ -6,22 +6,15 @@ bp_stopifnot = getFromNamespace("stopifnot", "backports")
 
 # Some paths to find the idats:
 iscan_folder<-"/home/idevillasante/shares/BDESTELLER/ISCAN/"
-idats_dir<-"/mnt/beegfs/idevillasante/Projects/SG0002/data-raw/idats/"
+idats_dir<-"/mnt/beegfs/idevillasante/Projects/XALD/data-raw/idats/"
 
 #Import excel samplesheets from metadata:
-Samples_on_Array_last <- readxl::read_excel("/mnt/beegfs/idevillasante/Projects/SG0002/metadata/Samples_on_Array_last.xlsx", 
-                                            skip = 7)
-dt<-data.table::as.data.table(Samples_on_Array_last)
-ss2<-dt[Investigator=="Nuria Climent (IDIBAPs/PCB)"]
-ss2$id<-ss2$Sample_Name
-ss2$Sample_Name<-NULL
-ss1<-data.table::as.data.table(readxl:: read_excel("/mnt/beegfs/idevillasante/Projects/SG0002/metadata/SampleSheet_TAT.xlsx"))
-ss1[,id:=sapply(strsplit(Sample_Name," "),"[",2)]
-ss1[,Sample_Name:=paste0(sapply(strsplit(Sample_Name," "),"[",1),"_",id)]#gsub()
-Sample_sheet<-merge(ss1,ss2, by="id")
+# Samples_on_Array_last <- readxl::read_excel("/mnt/beegfs/idevillasante/Projects/XALD/metadata/Samples_on_Array_last.xlsx", 
+                                            # skip = 7)
+Sample_sheet<-data.table::fread("/mnt/beegfs/idevillasante/Projects/XALD/data-raw/Samplesheet_XALD.csv",colClasses =  "character")
 
-paths<-Sample_sheet[,.(path_from=paste0(iscan_folder,Sentrix_ID,"/",barcode),
-                path_to=paste0(idats_dir,Sentrix_ID,"/",barcode))]
+paths<-Sample_sheet[,.(path_from=paste0(iscan_folder,Sentrix_ID,"/",Barcode),
+                path_to=paste0(idats_dir,Sentrix_ID,"/",Barcode))]
 
 paths[,sapply(1:.N, function(x){
   dir.create( dirname(paths$path_to[x]),recursive = T)
@@ -60,12 +53,12 @@ ss<-data.table(Sample_Name=Sample_sheet$Sample_Name,
                Basename=Basename,
                barcode=basename(Basename),
                Sample_Plate=Sample_sheet$Sample_Plate,
-               Pool_ID=Sample_sheet$Pool_ID,
+               Age=Sample_sheet$Age,
                Sample_Well =Sample_sheet$Sample_Well,
-               Sample_Group=paste0(Sample_sheet$Condition,"_",Sample_sheet$Treatment),
+               Sample_Group=paste0(Sample_sheet$Sample_Group),
                Sentrix_ID = Sample_sheet$Sentrix_ID,
                Sentrix_Position = Sample_sheet$Sentrix_Position,
-               Type = as.factor(Sample_sheet$Treatment),
+               Type = as.factor(Sample_sheet$Type),
                Condition = as.factor(Sample_sheet$Condition)
 )
 
@@ -82,6 +75,7 @@ batch <- c("Sentrix_ID") # Sentrix chip used
 covs <- c(
   "Type",           # Induction: No= no Doxicycline, Dox= induced with Doxi.
   "Condition",      # GENE: Exon1: only exon1, TAT: Whole gene, Control
+  "Age",
   NULL)
 
 mgroups <-c(

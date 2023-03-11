@@ -12,6 +12,8 @@ suppressMessages({
   library(targets)
   library(clustermq)
   library(RcppParallel)
+  library(future)
+  library(future.batchtools)
 })
 
 ## configuration for docopt
@@ -42,18 +44,28 @@ if (length(opt$ncores) == 1) {
   opt$ncores <- RcppParallel::defaultNumThreads()
 }
 
-if (length(opt$scheduler) == 1 && as.character(opt$scheduler) %in%  c("multicore","multiprocess")) {
+if (length(opt$scheduler) == 1 && as.character(opt$scheduler) %in%  c("multicore","multiprocess","future")) {
   ## as littler can now read ~/.littler.r and/or /etc/littler.r we can preset elsewhere
   opt$scheduler <- as.character(opt$scheduler)
+  options(clustermq.scheduler = opt$scheduler   )
+  targets::tar_make_clustermq(workers = as.numeric(opt$ncores))
 }else if(is.null(opt$scheduler)){
   opt$scheduler <- targets::use_targets_scheduler()
+  options(clustermq.scheduler = opt$scheduler   )
+  targets::tar_make_clustermq(workers = as.numeric(opt$ncores))
+}else if(scheduler == "future"){
+  opt$scheduler <-as.character(opt$scheduler)
+  
+  future::plan(batchtools_slurm, template = "./batchtools.slurm.tmpl")
+  targets::tar_make_future(workers = as.numeric(opt$ncores))
 }else{
   warning("choose a valid option for scheduler, see run.R -x for info")
   opt$scheduler <- targets::use_targets_scheduler()
+  options(clustermq.scheduler = opt$scheduler   )
+  targets::tar_make_clustermq(workers = as.numeric(opt$ncores))
 }
 
-options(clustermq.scheduler = opt$scheduler   )
-targets::tar_make_clustermq(workers = as.numeric(opt$ncores))
+
 
 
 # targets::tar_make_clustermq(workers = as.numeric(ncores)) # nolint

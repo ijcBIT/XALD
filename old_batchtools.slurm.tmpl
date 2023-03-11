@@ -1,0 +1,42 @@
+#!/bin/bash
+
+
+<%
+# relative paths are not handled well by Slurm
+log.file = fs::path_expand(log.file)
+-%>
+
+
+#SBATCH --job-name=<%= job.name %>
+#SBATCH --output=<%= log.file %>
+#SBATCH --error=<%= log.file %>
+#SBATCH --time=<%= ceiling(resources$walltime / 60) %>
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=<%= resources$ncpus %>
+#SBATCH --mem-per-cpu=<%= resources$memory %>
+<%= if (!is.null(resources$partition)) sprintf(paste0("#SBATCH --partition='", resources$partition, "'")) %>
+<%= if (array.jobs) sprintf("#SBATCH --array=1-%i", nrow(jobs)) else "" %>
+
+## Initialize work environment like
+source("~/.bashrc")
+source("/etc/profile")
+
+## module add ...
+module load singularity-3.8.3-gcc-11.2.0-rlxj6fi
+
+
+## Export value of DEBUGME environemnt var to slave
+export DEBUGME=<%= Sys.getenv("DEBUGME") %>
+## Export libraries for R packages
+export SINGULARITYENV_R_LIBS_USER=<%= paste0(Sys.getenv("HOME"),"/apps/R_Singularity/4.2:",Sys.getenv("HOME"),"/.cache/R/renv/cache/v5/R-4.2/x86_64-pc-linux-gnu/:",Sys.getenv("R_LIBS_USER")) %>
+
+export SINGULARITYENV_RENV_PATHS_LIBRARY=<%= "renv/library/" %>
+
+<%= sprintf("export OMP_NUM_THREADS=%i", resources$omp.threads) -%>
+<%= sprintf("export OPENBLAS_NUM_THREADS=%i", resources$blas.threads) -%>
+<%= sprintf("export MKL_NUM_THREADS=%i", resources$blas.threads) -%>
+
+## Run R:
+## we merge R output with stdout from SLURM, which gets then logged via --output option
+
+singularity exec /mnt/beegfs/idevillasante/apps/rocker/images/dev.sif  R -e 'batchtools::doJobCollection("<%= uri %>")'

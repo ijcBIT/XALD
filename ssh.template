@@ -1,0 +1,12 @@
+ssh -o "ExitOnForwardFailure yes" -f \
+    -R {{ ctl_port }}:localhost:{{ local_port }} \
+    -R {{ job_port }}:localhost:{{ fwd_port }} \
+    {{ ssh_host }} \
+    "source /etc/profile; module load singularity-3.8.3-gcc-11.2.0-rlxj6fi ; (singularity exec /mnt/beegfs/idevillasante/apps/rocker/images/dev.sif R  --no-save --no-restore -e 'clustermq:::ssh_proxy(ctl={{ ctl_port }}, job={{ job_port }})'> {{ ssh_log | /dev/null }} 2>&1 )"
+    
+    
+    
+    
+    #(singularity exec /mnt/beegfs/idevillasante/apps/rocker/images/dev/ R  --no-save --no-restore -e \
+    #    'clustermq:::ssh_proxy(ctl={{ ctl_port }}, job={{ job_port }})' \
+    #    > {{ ssh_log | /dev/null }} 2>&1 )"

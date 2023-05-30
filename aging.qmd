@@ -11,6 +11,143 @@ cahce: true
 options(digits=2)
 ```
 
+
+
+```{r}
+#| include: false
+#| eval: true
+get_pathway<-function(probeIDs,dt){
+  
+  # Crete a list to store pathways results:
+plist<-list()
+
+# Subset annotation to the corresponding probeset:
+anno<-dt[probeIDs,]
+
+# Get hypomethylated genes list: 
+genes.hypo <- unique(unlist(sapply(
+  anno[type=="hypo",gene_name]
+  ,function(x)unlist(strsplit(x,";")))))
+
+# Get pathways associated with the previous set:
+pathways.hypo <- gprofiler2::gost(signif = T ,genes.hypo)
+
+# Clean results:
+dth<- data.table::as.data.table(pathways.hypo[[1]])
+dth[,FDR:=p_value]
+dth[,Contrast:="controls"]
+dth[,TERM:=term_name]
+dth[,source:=factor(source)]
+
+pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
+
+# Store results 
+plist$hypo <- pathway
+
+# Repeat for hypermethylated genes: 
+
+genes.hyper <- unique(unlist(sapply(
+  anno[type=="hyper",gene_name]
+  ,function(x)unlist(strsplit(x,";")))))
+pathways.hyper <- gprofiler2::gost(signif = T ,genes.hyper)
+
+# Store results 
+dth<- data.table::as.data.table(pathways.hyper[[1]])
+dth[,FDR:=p_value]
+dth[,Contrast:="controls"]
+dth[,TERM:=term_name]
+dth[,source:=factor(source)]
+pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
+plist$hyper<-pathway
+return(plist)
+}
+```
+
+```{r dtable}
+dtable<-function(data){
+  DT::datatable(
+        { data},
+        filter = 'top',
+        # selection = list(mode = 'multiple', selected = c(1:10), target = 'column', selectable = c(-2, -3)),
+        fillContainer = F,
+        # style =  "bootstrap",
+
+        extensions = 'Buttons',
+
+        options = list(
+          paging = TRUE,
+          searching = TRUE,
+          fixedColumns = TRUE,
+          autoWidth = FALSE,
+          scrollX=TRUE,
+          digits=4,
+          ordering = TRUE,
+          dom = 'Bfrtip',
+          buttons = list(
+            list(
+              extend = "collection",
+              text = 'download entire dataset',
+              action = DT::JS("function ( e, dt, node, config ) {
+                                                    Shiny.setInputValue('test', true, {priority: 'event'});
+                                                    }")
+            ),
+            'copy',
+            'csv',
+            'excel'
+          ),
+
+          class = "display",
+          server=TRUE
+        ),
+      ) |> DT::formatRound(which(sapply(data,is.double)),4)
+}
+```
+
+```{r}
+#| context: server
+myModal <- function() {
+
+  div(id = "test",
+      shiny::modalDialog(downloadButton("download1","Download data as csv"),
+                         br(),
+                         br(),
+                         downloadButton("download2","Download data as excel"),
+                         easyClose = TRUE, title = "Download Table")
+  )
+}
+
+renderDT<- function(data){
+  output$dtable <- DT::renderDataTable({
+    dtable(data)
+  })
+
+    shiny::observeEvent(input$test, {
+      print("hello")
+      showModal(myModal())
+    })
+    output$download1 <- shiny::downloadHandler(
+      filename = function() {
+        paste("data-", Sys.Date(), ".csv", sep="")
+      },
+      content = function(file) {
+        write.csv(data, file)
+      }
+    )
+
+    output$download2 <- shiny::downloadHandler(
+      filename = function() {
+        paste("data-", Sys.Date(), ".xlsx", sep="")
+      },
+      content = function(file) {
+        writexl::write_xlsx(data, file)
+      })
+}
+
+```
+
+
+
+
 # Question 1: difference between controls age/young: {#sec-intro}
 
 There are 2 ways in which we are going to check for the age signature of our controls.
@@ -55,15 +192,34 @@ DT::datatable(sup2)
 Loaded data has been filtered out for single nucleotide polymorphism (SNP) at or near the target CpG with minor allele frequency equal or larger than 1 % and probes that contained more than 2 SNPs.
 
 ```{r}
+#| eval: false
+
 library(data.table)
 library(targets)
 library(SummarizedExperiment)
 library(S4Vectors)
-tar_load(filtered_inhouse)
-tar_load(ss_clean_inhouse)
-ss<-data.table::as.data.table(ss_clean_inhouse)
-controls<-filtered_inhouse[,ss[Type=="Control",Sample_Name]]
+ss <- readRDS("data/SS.rds")
+ss_ctl <- ss[Type=="Control",]
+
+rgSet <- cnv.methyl::read.metharray.exp.par(targets=ss_ctl,ncores = 36,folder = "analysis/intermediate/")
+rgSet <- minfi::read.metharray.exp(targets = ss_ctl)
+
+mset <- name_rgset(rgSet,ss_ctl,exclude="206702460034_R05C01",newname="Sample_Name")
+
+controls<-filter(                                         # 1.- Filters: -probes: pval<0.01 
+    targets=ss_ctl, rgSet=mset,sampGroups="Sample_Group", #              -samples: 10% probes fail
+    qc_folder = "analysis/")
+ss_ctl <- data.table::data.table(as.data.frame(controls@colData))
 ```
+
+```{r}
+#| echo: false
+#| output: true
+controls <- readRDS("data/controls.rds")
+ss_ctl <- data.table::data.table(as.data.frame(controls@colData))
+
+```
+
 
 ### QC plots:
 
@@ -82,16 +238,6 @@ qc(                                                       # Makes qc plots:qcRep
 
 ![beanplot](analysis/aging/ctl/bean_plot.png){alt="beanplot"}
 
-```{r}
-library(targets)
-library(data.table)
-tar_load(ss_clean_inhouse)
-ss_ctl<-ss_clean_inhouse[Type=="Control",]
-tar_load(filtered_inhouse)
-controls<-filtered_inhouse[,ss_ctl$Sample_Name]
-dim(controls)
-
-```
 
 There are `r dim(controls)[1]` probes that pass QC and `r dim(controls)[2]` control samples in our dataset.
 
@@ -232,10 +378,10 @@ Let's take a look at the sample size of each of the age_profile datasets. (4 ref
 -   expected: Expected percentage of DMPs (N_DMPs/N_total)
 
 ```{r}
-
+library(data.table)
 tab <- t(sapply(probelist,function(x) table(rownames(full_mod) %in% x)))
 tab2 <- t(sapply(probelist,function(x) table(rownames(sig_mod) %in% x)))
-dtab<-data.table(
+dtab<-data.table::data.table(
   dataset = c(rownames(tab)),
   N_Age_ref = sapply(probelist,NROW),
   N_tested = paste0(tab[,2], " (",round(tab[,2]/sapply(probelist,NROW)*100,2), "%)"),
@@ -407,33 +553,35 @@ EPIC_anno<-data.table::as.data.table(as.data.frame(IlluminaHumanMethylationEPICa
 data.table::setkey(EPIC_anno,cg)
 
 # 2. Filter for significant probes and absolute mean difference of beta values > 0.05 
-dt<-p_long[model=="sig_mod"&abs(diff)>0.05,.SD,.SDcols=c("ref","cg","type","diff")]
+dt_path<-p_long[model=="sig_mod"&abs(diff)>0.05,.SD,.SDcols=c("ref","cg","type","diff")]
 
 # 3. add gene name information to our data.table
-data.table::setkey(dt,cg)
-dt$gene_name <- EPIC_anno[dt$cg,UCSC_RefGene_Name]
+data.table::setkey(dt_path,cg)
+dt_path$gene_name <- EPIC_anno[dt_path$cg,UCSC_RefGene_Name]
 ```
 
 ```{r}
-head(dt)
+head(dt_path)
+
 ```
 
-#### cgIn_consensus:
+### cgIn_consensus:
 
 The consensus set by merging all reference sets and selecting significant probes in our model.
 
 ```{r}
-probelist$cgIn_consensus <- unique(dt$cg)#intersect(row.names(sig_mod), unique(unlist(probelist)))
+probelist$cgIn_consensus <- unique(dt_path$cg)#intersect(row.names(sig_mod), unique(unlist(probelist)))
 ```
 
 Now we  will look at the associated pathways to that reference set:
 
 ```{r}
+source("R/functions.R")
 # Crete a list to store pathways results:
 cgIn_consensus<-list()
 
 # Subset annotation to the corresponding probeset:
-anno<-dt[probelist$cgIn_consensus,]
+anno<-dt_path[probelist$cgIn_consensus,]
 
 # Get hypomethylated genes list: 
 genes.hypo <- unique(unlist(sapply(
@@ -448,6 +596,8 @@ dth<- data.table::as.data.table(pathways.hypo[[1]])
 dth[,FDR:=p_value]
 dth[,Contrast:="controls"]
 dth[,TERM:=term_name]
+dth[,source:=factor(source)]
+
 pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
 
 # Store results 
@@ -465,7 +615,7 @@ dth<- data.table::as.data.table(pathways.hyper[[1]])
 dth[,FDR:=p_value]
 dth[,Contrast:="controls"]
 dth[,TERM:=term_name]
-
+dth[,source:=factor(source)]
 pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
 cgIn_consensus$hyper<-pathway
 pathways_refsets[["cgIn_consensus"]]<-cgIn_consensus
@@ -473,35 +623,103 @@ pathways_refsets[["cgIn_consensus"]]<-cgIn_consensus
 
 ```
 
-#### cgIn_top:
+#### Hyper pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_consensus$hyper)
+```
+
+
+#### Hypo pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_consensus$hypo)
+```
+
+
+### cgIn_top:
 
 Select the top significant probes in our model. We will use limma's topTable function to get the top 5000 most significant probes.
 
 ```{r}
-probelist$cgIn_top <- rownames(limma::topTable(full_mod,number=5000))
+probelist$cgIn_top <- rownames(limma::topTable(sig_mod,number=5000))
 ```
 
-#### cgIn_literature:
+For convinience the chunk of code above has been converted to a function:
+
+```{r}
+pathways_refsets[["cgIn_top"]]<-get_pathway(probeIDs = probelist$cgIn_top,dt=dt_path)
+
+```
+
+#### Hyper pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_top$hyper)
+```
+
+
+#### Hypo pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_top$hypo)
+```
+
+
+
+### cgIn_literature:
 
 From all the reference datasets in the paper, cgSet_pre contains more DMPs in our data than any other.
 
 ```{r}
-probelist$cgIn_literature <- intersect(
-  rownames(sig_mod),
-  probelist$cgSet_pre
-  )
+probelist$cgIn_literature <- dt_path[ref=="cgSet_pre",cg]
 ```
 
-#### cgIn_PBMC:
+```{r}
+pathways_refsets[["cgIn_literature"]]<-get_pathway(probelist$cgIn_literature,dt=dt_path)
+
+```
+
+#### Hyper pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_literature$hyper)
+```
+
+
+#### Hypo pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_literature$hypo)
+```
+
+
+### cgIn_NO:
 
 Although it has less %DMPs than When we perform the t-test the dataset from PBMC cell line without changes in expression has a lower p-value.
 
 ```{r}
-probelist$cgIn_NO <- intersect(
-  rownames(sig_mod),
-  probelist$cgSet_NO
-  )
+probelist$cgIn_NO <- dt_path[ref=="cgSet_NO",cg]
 ```
+
+```{r}
+pathways_refsets[["cgIn_NO"]]<-get_pathway(probelist$cgIn_NO,dt=dt_path)
+
+```
+
+#### Hyper pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_NO$hyper)
+```
+
+
+#### Hypo pathways:
+
+```{r}
+dtable(pathways_refsets$cgIn_NO$hypo)
+```
+
 
 # Question 2: DMPs in disease {#sec-disease}
 
@@ -514,9 +732,18 @@ Since we only have childs with the cerebral condition, and we believe that the d
 ```{r}
 library(targets)
 library(data.table)
-ss_adults<-ss_clean_inhouse[Age > 18, ]
-targets::tar_load(filtered_inhouse)
-adults<-filtered_inhouse[,ss_adults$Sample_Name]
+ss_adults <- ss[Age > 18, ]
+
+rgSet <- cnv.methyl::read.metharray.exp.par(targets=ss_adults,ncores = 36,folder = "analysis/intermediate/")
+rgSet <- minfi::read.metharray.exp(targets = ss_adults)
+
+mset <- name_rgset(rgSet,ss_adults,exclude="206702460034_R05C01",newname="Sample_Name")
+
+adults<-filter(                                         # 1.- Filters: -probes: pval<0.01 
+    targets=ss_adults, rgSet=mset,sampGroups="Sample_Group", #              -samples: 10% probes fail
+    qc_folder = "analysis/")
+ss_adults <- data.table::data.table(as.data.frame(adults@colData))
+
 dim(adults)
 
 ```
@@ -977,7 +1204,7 @@ kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
 ```
 
 We see there is a small difference in methylation for the dataset built with our controls and also for the dataset from literature.
-
+For more information about the pathways associated with the set of methylated genes for each reference set take a look at @sec-inhouseref set 
 
 
 
@@ -1017,8 +1244,5 @@ Now this data is sent to the horvath calculator and these are the results:
 ```
 
 
-```{r}
-
-```
 
 ###############

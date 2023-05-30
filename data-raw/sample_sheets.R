@@ -124,7 +124,7 @@ setattr(ss_AMN,"category",attributes(out)$category[match(names(ss_AMN),names(out
 saveRDS(ss_AMN,"data/ss_AMN.rds")
 
 # Model1: No cereb(condition2)
-ss_NoCereb<-out[Condition!="Cereb",]
+ss_NoCereb<-out[!endsWith(Sample_Group,"Cereb"),]
 setattr(ss_NoCereb,"category",attributes(out)$category[match(names(ss_NoCereb),names(out))])
 
 saveRDS(ss_NoCereb,"data/ss_NoCereb.rds")

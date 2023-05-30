@@ -1,2 +1,2 @@
-source("../meth_functions.R")
-source("~/Projects/pathways.R")
+source("R/meth_functions.R")
+source("R/pathways.R")

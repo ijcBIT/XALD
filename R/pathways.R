@@ -10,11 +10,15 @@
 
 
 pathways_dict <- function(KEGG=T,GO=T ) {
+  sym_KEGG = as.symbol(KEGG)
+  sym_GO = as.symbol(GO)
+  command_GO <- substitute(getGO(DO=GO),env = list(GO = GO))
+  command_KEGG <- substitute(getKEGG(DO=KEGG),env = list(KEGG = KEGG))
   list(
-    tar_target_raw("GO_dict",quote(getGO(DO=GO)) , deployment = "main"),
-    tar_target_raw("KEGG_dict", quote(getKEGG(DO=KEGG)), deployment = "main"),
-    tar_target_raw("p_dict", quote(rbind(GO_dict,KEGG_dict)), deployment = "main",format = "arrow"),                                               # Strips category tags
-    
+    tar_target_raw("GO_dict",command_GO , deployment = "main"),
+    tar_target_raw("KEGG_dict", command_KEGG, deployment = "main"),
+    tar_target_raw("p_dict", quote(rbind(GO_dict,KEGG_dict)),
+                   deployment = "main") 
   )
 }
 
@@ -30,7 +34,7 @@ pathways_dict <- function(KEGG=T,GO=T ) {
 #' @param dmrs gRanges object with DMRs
 #' @param n Number of pathways to show on the summary
 #' @param type hyper/hypo/all
-pathways <- function(ann=F, dmrs=F, n=Inf, type=c("Hyper","Hypo","All"),KEGG=T,GO=T) {
+pathways <- function(ann=F, dmrs=F, n=Inf, type=c("Hyper","Hypo","All"),KEGG=T,GO=T ) {
   list(
     tar_target_raw("gsa",quote(data.table::fwrite(p_dict,"path_dict.csv")))
   )

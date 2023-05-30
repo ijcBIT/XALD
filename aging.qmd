@@ -443,8 +443,15 @@ genes.hypo <- unique(unlist(sapply(
 # Get pathways associated with the previous set:
 pathways.hypo <- gprofiler2::gost(signif = T ,genes.hypo)
 
+# Clean results:
+dth<- data.table::as.data.table(pathways.hypo[[1]])
+dth[,FDR:=p_value]
+dth[,Contrast:="controls"]
+dth[,TERM:=term_name]
+pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
+
 # Store results 
-cgIn_consensus$hypo <- pathways.hypo[[1]]
+cgIn_consensus$hypo <- pathway
 
 # Repeat for hypermethylated genes: 
 
@@ -454,9 +461,16 @@ genes.hyper <- unique(unlist(sapply(
 pathways.hyper <- gprofiler2::gost(signif = T ,genes.hyper)
 
 # Store results 
-cgIn_consensus$hyper <- pathways.hyper[[1]]
+dth<- data.table::as.data.table(pathways.hyper[[1]])
+dth[,FDR:=p_value]
+dth[,Contrast:="controls"]
+dth[,TERM:=term_name]
 
+pathway<-path_results(dth,group="source",cols = c("term_size","query_size","intersection_size"))
+cgIn_consensus$hyper<-pathway
 pathways_refsets[["cgIn_consensus"]]<-cgIn_consensus
+
+
 ```
 
 #### cgIn_top:

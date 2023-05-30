@@ -24,7 +24,11 @@ jobs:
         with:
           # uses the RStudio Package Manager
           use-public-rspm: true 
-      
+          
+      - name: Install curl
+        run: sudo apt-get install -y libcurl4-openssl-dev
+    
+
       # imports an action from another repository, 
       # that deals with the dependencies
       - uses: r-lib/actions/setup-r-dependencies@v2

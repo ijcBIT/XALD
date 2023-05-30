@@ -1,24 +1,51 @@
-project:
-  type: book
+project: 
+  type: website
 
-book:
-  title: "Methylation array analysis"
-  author: "Izar de Villasante"
-  date: "1/31/2023"
-  chapters:
-    - index.qmd
-    - intro.qmd
-    - aging.qmd
-    - summary.qmd
-    - references.qmd
+website: 
+  # google-analytics: G-ML1E5YYLV4
 
-bibliography: references.bib
+  page-navigation: true
+  title: "XALD Methylation array analysis" 
+  # author: "Izar de Villasante"
+  site-url: "https://ijcbit.github.io/XALD/" 
+  repo-url: https://github.com/ijcBIT/XALD 
+  repo-actions: [edit, issue]
+  
+  page-footer:
+    right: "This page is built with ❤️ and [Quarto](https://quarto.org/)."
+    left: "&copy; CC-By IJC-Bit, 2022"
+    
+  sidebar:
+    # logo: "data/img/logo.png"
+    pinned: true
+    align: center
+    tools: 
+      - icon: globe
+        href: https://www.carrerasresearch.org/en/bioinformatics-unit_130420
+        text: "IJC-BIT"
+      - icon: github
+        href:  https://github.com/ijcBIT/XALD 
+        text: "Workshops website"
+ 
 
+    style: "docked"
+    search: true
+    collapse-level: 2
+    contents:
+      - index.qmd
+      - intro.qmd
+      - aging.qmd
+      - summary.qmd
+      - references.qmd
 format:
   html:
-    theme: cosmo
-  pdf:
-    documentclass: scrreprt
+    theme:
+      light: [cosmo, theme.scss] # from https://github.com/sta210-s22/website/blob/main/_quarto.yml
+      dark: [cosmo, theme-dark.scss]
+    code-copy: true
+    code-overflow: wrap
+    toc: true
 
-
-
+filters:
+  - include-files.lua
+  - quarto

@@ -5,7 +5,7 @@
 #SBATCH --error={{ log_file | cmq_%j-%a.err }}
 #SBATCH --mem-per-cpu={{ memory | 4096 }}
 #SBATCH --array=1-{{ n_jobs }}
-#SBATCH --cpus-per-task={{ cores | 5 }}
+#SBATCH --cpus-per-task={{ cores | 64 }}
 #SBATCH --nodelist=c01
 ulimit -v $(( 1024 * {{ memory | 4096 }} ))
 
@@ -13,8 +13,8 @@ source ~/.bashrc
 source /etc/profile
 module load  singularity/3.8.4-GCC-11.2.0
 
-cd $SLURM_SUBMIT_DIR
-export SINGULARITYENV_RENV_PATHS_LIBRARY=renv/library/
+cd $HOME/Projects/XALD/
+export SINGULARITYENV_RENV_PATHS_LIBRARY=$HOME/Projects/XALD/renv/library/
 export SINGULARITYENV_R_LIBS_USER=$HOME/apps/R_Singularity/4.2:$HOME/.cache/R/renv/cache/v5/R-4.2/x86_64-pc-linux-gnu/:$R_LIBS_USER
 
 CMQ_AUTH={{ auth }} singularity exec /mnt/beegfs/idevillasante/apps/rocker/images/dev.sif  R --no-save --no-restore -e 'clustermq:::worker("{{ master }}")'

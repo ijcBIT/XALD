@@ -1,0 +1,1010 @@
+---
+title: "age signature"
+author: "Izar de Villasante"
+number-sections: true
+crossref:
+  chapters: true
+cahce: true
+---
+
+```{r}
+options(digits=2)
+```
+
+# Question 1: difference between controls age/young: {#sec-intro}
+
+There are 2 ways in which we are going to check for the age signature of our controls.
+
+-   1.A: By checking if there are significant DMPs on our data comparing young and old controls (healthy samples)
+
+-   1.B: By subsetting the EPIC methylation array sites to those that have been previously reported to change methylation with age.
+
+## PBMC cell aging signature:
+
+To answer question 1.B we are going to take as a reference the work made by Wilma, T. et al @Steegenga2014
+
+In their paper they present 3 datasets: 1. cgSet_Exprs: The set of probes that come from observed changes in methylation AND in expression (398 genes) 2. cgSet_NO: The set of probes that come from observed changes in methylation BUT NOT expression (2390 genes) 3. cgSet_pre: The set of probes reported to be age-related on previous literature.
+
+And we created a new one combining 2 &3: 4. cgSetm: The combination/union of cgSet_Exprs & cgSet_NO
+
+So let's prepare our data replicating their workflow:
+
+### DNA methylation & gene expression: {#sec-preprocessing}
+
+450k array where pre-processed and cleaned and the old subjects where compared to the young subjects.
+
+20,917 were significantly regulated (Lima *t* test, *p* \< 0.01) between the group of old and young subjects. Over 5 % methylation difference between the mean of the group of the young and old subjects was found for 10,625. 7,598 gene-related and 3,027 intergenic probes. From the 7,598 gene-related 640 probes where further discarded because of pseudo- and uncharacterized genes, antisense RNAs, long intergenic nonprotein coding RNAs and micro-RNAs.
+
+Finally a clean set of 6958 probes where selected and the most significant differentially expressed genes were identified using −2 \> *t* value \> 2 as a cut-off. Fig 2A
+
+![](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4082572/bin/11357_2014_9648_Fig2_HTML.jpg)
+
+398 genes where selected as the most significant differentially expressed genes and 170 of those have at least 2 associated DMPs.
+
+```{r}
+#| column: page
+readxl::read_xls("data/11357_2014_9648_MOESM2_ESM.xls",sheet = 2,skip = 2)->sup2
+DT::datatable(sup2)
+
+```
+
+## Inhouse data:
+
+### Load:
+
+Loaded data has been filtered out for single nucleotide polymorphism (SNP) at or near the target CpG with minor allele frequency equal or larger than 1 % and probes that contained more than 2 SNPs.
+
+```{r}
+library(data.table)
+library(targets)
+library(SummarizedExperiment)
+library(S4Vectors)
+tar_load(filtered_inhouse)
+tar_load(ss_clean_inhouse)
+ss<-data.table::as.data.table(ss_clean_inhouse)
+controls<-filtered_inhouse[,ss[Type=="Control",Sample_Name]]
+```
+
+### QC plots:
+
+```{r}
+source("../meth_functions.R")
+idcol="Sample_Name"
+ctl_qc_dir="analysis/aging/ctl/"
+dir.create(ctl_qc_dir,recursive = T, showWarnings = F)
+controls_qc <- 
+qc(                                                       # Makes qc plots:qcReport, density, beanplot, mean_qc 
+    controls,sampGroups = "Sample_Group",sampNames=idcol,idcol=idcol, qc_folder = ctl_qc_dir
+    )
+```
+
+![](analysis/aging/ctl/density_plot.png)
+
+![beanplot](analysis/aging/ctl/bean_plot.png){alt="beanplot"}
+
+```{r}
+library(targets)
+library(data.table)
+tar_load(ss_clean_inhouse)
+ss_ctl<-ss_clean_inhouse[Type=="Control",]
+tar_load(filtered_inhouse)
+controls<-filtered_inhouse[,ss_ctl$Sample_Name]
+dim(controls)
+
+```
+
+There are `r dim(controls)[1]` probes that pass QC and `r dim(controls)[2]` control samples in our dataset.
+
+```{r}
+table(ss_ctl$Condition)
+```
+
+### Normalization:
+
+Following the aforementioned paper @Steegenga2014 we now normalize the data using the subset-quantile within array normalization (SWAN) method:
+
+```{r}
+library(minfi)
+norm<-minfi::preprocessSWAN(controls)
+```
+
+```{r}
+#Report
+```
+
+## 1.A: Methylation differences between young & adult: {#sec-controls}
+
+To test the effect of age on our controls we will split our samples into adult +18 and young \<18 subjects. Then we will fit a model to compare the methylation levels of this 2 groups.
+
+```{r}
+
+
+source("../meth_functions.R")
+mvals<-getM(norm) 
+full_mod<-mod(object = mvals, group_var = "Condition",
+                        singular=F,pairwise = T,
+                        metadata = ss_ctl,
+                        idcol="Sample_Name")
+saveRDS(full_mod,"data/full_mod.rds")
+```
+
+## 
+
+```{r}
+sig_mod<-full_mod[abs(full_mod$t)>2 & full_mod$p.value < 0.01 ,]
+
+saveRDS(sig_mod,"data/sig_mod.rds")
+
+```
+
+`r nrow(sig_mod)` were significantly regulated (Lima *t* test, *p* \< 0.01) between the group of adult and child subjects using −2 \> *t* value \> 2 as a cut-off.
+
+```{r}
+library(cnv.methyl)
+library(minfi)
+dmps <- cnv.methyl::DMPextr(fit = sig_mod,                         # Toptable & stats
+                                            ContrastsDM = colnames(full_mod$contrasts),
+                                            beta_normalized = minfi::getBeta(controls),
+                                            p.value = 0.01,
+                                            mDiff = 0.05,
+                                            ann = minfi::getAnnotation(controls),
+                                            writeOut = F)
+saveRDS(dmps,"data/dmps.rds")
+```
+
+From here we could extract our own group of DMPs comparing the two age groups from the contrasts.
+
+```{r}
+dmps<-data.table::as.data.table(dmps[nchar(dmps$UCSC_RefGene_Name>1),])
+dmps<-dmps[,UCSC_RefGene_Name:=sapply(UCSC_RefGene_Name,function(x) paste(unique(unlist(strsplit(x,";"))),collapse = ";"))]
+NROW(dmps)
+```
+
+So yes, there are actually `r NROW(dmps)` DMPs.
+
+```{r}
+plotDMP(data.table::as.data.table(dmps))
+```
+
+Now we already checked that there are methylation differences in our data by separating controls into young and old. Since our samples are only controls and the only controlled difference between them is age, this suggests that the observed methylation differences are related to that factor. Nevertheless, there could be other underlying variables affecting the methylation levels between the 2 conditions that we ignore.
+
+So far, we followed the proceeding from the paper in our analysis in order to mimic their workflow so the results are comparable. Nevertheless, they also measured expression values, which they used to correlate with methylation levels in order to filter the gene candidates for their age-related profile. In our case, there is no expression, so we can't construct a dataset of candidate genes taking into account gene expression. Eventhough, we can use the same datasets from their previous work on our data in order to see if the set with expression and without expression behave in a different way.
+
+## 1.B: Intersection with reference datasets:
+
+As mentioned previously, another way to find out if there is a change in methylation associated with aging in our data is looking at those sites that have been previously reported to show this association. We will use the PBMC reference datasets (with/without expression change) plus the one from previous literature that is also mentioned in the paper from @Steegenga2014:
+
+### Load data:
+
+```{r}
+library(readxl)
+paper_betas <- readxl::read_excel("data/11357_2014_9648_MOESM2_ESM.xls", 
+    sheet = "sTable 2S", skip = 2)
+paper_betas2 <- readxl::read_excel("data/11357_2014_9648_MOESM2_ESM.xls", 
+    sheet = "sTable 3S", skip = 2)
+paper_betas3 <- readxl::read_excel("data/11357_2014_9648_MOESM2_ESM.xls", 
+    sheet = "sTable 4S", skip = 6)
+```
+
+### Reference probelists #sec-probelist
+
+There are 4 reference probelists:
+
+1.  cgSet_Exprs: The set of probes that come from observed changes in methylation BUT NOT in expression (398 genes)
+
+2.  cgSet_NO: The set of probes that come from observed changes in methylation AND expression (2390 genes)
+
+3.  cgSetm: The combination/union of cgSet_Exprs & cgSet_NO
+
+4.  cgSet_pre: The set of probes reported to be age-related on previous literature.
+
+```{r}
+probelist <- list(
+  cgSet_Exprs = paper_betas$ProbeID,
+  cgSet_NO = paper_betas2$ProbeID,
+  cgSetm = unique(c(paper_betas$ProbeID,paper_betas2$ProbeID)),
+  cgSet_pre = paper_betas3$`Probe nr`
+
+)
+saveRDS(probelist,"data/probelist.rds")
+```
+
+### reference vs inhouse:
+
+We have 2 models, the full model, which has all the probes from the normalised data in it `full_mod` and the same model which has been filtered according to the same criteria as in the paper `sig_mod` (0.01 pval & +-2t) to keep only sites with a significant change in methylation.
+
+So, as we saw in 1A we get a set of +50K DMPs, following the steps described in the paper to construct a new reference dataset from our data (excluding the part where data is crossed with expression).\
+We believe those sites are related to age because the model was built comparing old vs young healthy subjects, but there might be other factors affecting the differences in methylation, there are 2 solutions we propose:
+
+1.  sig_mod: We could either intersect our significant probes `nrow(sig_mod)` with the sites that have been previously reported to be related with age.
+
+2.  full_mod: Test the whole reference datasets on our data.
+
+sig_mod may offer better results, since it is based on the differences present in our own data, but fopr the same reason it could also introduce bias.
+
+Let's take a look at the sample size of each of the age_profile datasets. (4 references x 2 models = 8 datasets):
+
+-   dataset: The name of the reference dataset used
+-   N_Age_ref: Total size of the reference dataset
+-   N_tested: The subset of probes from each reference dataset that we tested (are present in our chip and have not been discarded in QC steps)
+-   N_DMPs: Number of probes that are significantlly methylated between the 2 groups that are also present in each of the age reference subset.
+-   observed: Number of DMPs with percentajes relative to reference datasets.
+-   expected: Expected percentage of DMPs (N_DMPs/N_total)
+
+```{r}
+
+tab <- t(sapply(probelist,function(x) table(rownames(full_mod) %in% x)))
+tab2 <- t(sapply(probelist,function(x) table(rownames(sig_mod) %in% x)))
+dtab<-data.table(
+  dataset = c(rownames(tab)),
+  N_Age_ref = sapply(probelist,NROW),
+  N_tested = paste0(tab[,2], " (",round(tab[,2]/sapply(probelist,NROW)*100,2), "%)"),
+  N_DMPs = tab2[,2]
+  
+)
+
+dtab[,observed:=paste0(N_DMPs, "/", tab[,2], " (",round((N_DMPs/tab[,2])*100,2), "%)"  )]
+dtab[, expected:= round( NROW(sig_mod$coefficients)/NROW(full_mod$coefficients) *100,2)]
+dtab
+```
+
+Our significant dataset still captures more than 30% of the probes for each reference dataset, while the overall percentage of probes that show differences in methylation between young and adults is 16.14%. After data preprocessing around 90% of the cgs for each reference set is present in our data, which we consider is a fair representation. On average, 16.14% of the cg sites in our data are DMPs. While 34-55% of the probes from the age-related reference sets are DMPs. Thus, the percentage of DMPs is higher than the mean of DMPs in our data. This suggests that on our particular model fitted on age there is some enrichment for this age-related probes, which makes sense. Nevertheless, although the model has been trained using controls and using age as the independent variable, some of the methylation changes between the two groups can respond to uncontrolled variables that we ignore. Since the reference datasets have been previously related to age, they can be used to filter the significant sites from our model into a consensus reference set for our particular PMBC model. More about inhouse reference datasets @sec-inhouseref .
+
+### Betas:
+
+```{r}
+sapply(names(probelist), function(n){
+    data.frame(
+      sig=length(intersect(probelist[[n]],rownames(sig_mod))),
+      full=length(intersect(probelist[[n]],rownames(full_mod)))
+    )
+      })
+```
+
+We can now construct each of the 8 datasets with mean beta values for young/adult groups:
+
+```{r}
+
+betas <- minfi::getBeta(controls)
+
+# Row index to multiply by betas taking the columns present in each contrast multiplying by 1/0
+design_FULL <- t(full_mod$design)
+# For each row on design (columns selected for each contrast) do betas * 1/0 to get the correct columns and then do the mean values for each group:
+betas_c_FULL <-apply(design_FULL , 1 , function(x) apply(betas[,ss_ctl$Sample_Name] %*% diag(x),1 , function(y) mean(y[y!=0])))
+
+betas_c <- lapply(list(full_mod,sig_mod),function(fit){
+  # Row index to multiply by betas taking the columns present in each contrast multiplying by 1/0
+  design <- t(fit$design)
+  
+  dt_c<-rbindlist(lapply(names(probelist), function(n){
+    idx<-intersect(probelist[[n]],rownames(fit))
+    cgs<-intersect(idx,rownames(betas))
+    b <- betas[cgs,]
+    # For each row on design (columns selected for each contrast) do betas * 1/0 to get the correct columns and then do the mean values for each group:
+    dt=as.data.table(apply(design , 1 , function(x) apply(b %*% diag(x),1 , function(y) mean(y[y!=0]))))
+    dt$ref=n
+    dt$cg=cgs
+    dt
+    } 
+  ))
+  dt_c
+})
+names(betas_c)<- c("full_mod","sig_mod")
+pdata<-rbindlist(betas_c,idcol = "model")
+names(pdata)[2:3]<-c("adult","child")
+pdata[,diff:=adult-child]
+pdata<-pdata[!is.na(diff),]
+pdata[,type:=ifelse(diff>0,"hyper","hypo")]
+p_long<-melt(pdata, measure.vars=c("adult","child") )
+p_long[,color:=ifelse(type  == "hyper","red","green")]
+```
+
+We are ready to test mean differences and plot:
+
+### Significance:
+
+We want to know if the differences in methylation between young and adults are significant for each of the reference sets. To do that, we test for differences in the group means.
+
+Methylation data is bimodal, since the effects of methylation can either occur by hyper or hypomethylation. This means the data is going to show a bimmodal distribution. Thus, a wilcoxon non-parametric test is used to compare the means .
+
+```{r wilcoxon controls}
+#| label: tbl-ctl.wilcox
+#| tbl-cap: "Young vs Adult Controls methylation distributions significance test."
+t <- pdata[,wilcox.test(child,adult)$p.value,by=c("ref","model")]
+t
+```
+
+Also a bimodal distribution could be transformed in 2 normal distributions for hyper and hypo.
+
+```{r controls t.test}
+#| label: tbl-ctl.t-test
+#| tbl-cap: "Young vs Adult Controls methylation distributions significance test."
+
+pdata[,sd.child:=sd(child),by=type]
+pdata[,sd.adult:=sd(adult),by=type]
+z_bimodal <- pdata[,c(N=.N,BSDA::z.test(child,adult,sigma.x=unique(sd.child),sigma.y=unique(sd.adult))),by=c("model","ref","type")]
+# t_bimodal <- pdata[,t.test(child,adult),by=c("ref","model","type")]
+z_bimodal[,group:=rep(c("child","adult"),.N/2)]
+zt<- dcast(z_bimodal, ref + model + type + N + p.value ~ group, value.var = c("estimate"))
+zt[,diff:=adult-child]
+data.table::setorder(zt,p.value,diff)
+kableExtra::kbl(zt)|>kableExtra::kable_classic_2()
+# kableExtra::kbl(z_bimodal[,.SD,.SDcols=c("ref","model","type","estimate","conf.int","p.value")],digits=2) |> kableExtra::kable_classic()
+```
+
+In this second statistical test, instead of comparing the distribution of the two groups we are splitting the data into hyper and hypomethylation, so it adds a new layer of information. The data in the table is sorted by p.value, so it shows the most significant first, but there is the estimate mean difference too.
+
+The results show that there are significant differences.
+
+Dataset means are all significantlly diferent (either with wilcoxon or student t test). For cgSet_pre from the literature there is a decrease in methylation with age. There is an increase in methylation for the cgSet_NO dataset (without expression) and less differences for those sites correlated with expression changes.
+
+### Plots:
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+  p1<-ggplot(p_long, aes(x=variable, y=value, fill= variable)) +
+     geom_boxplot(aes(fill=variable),outlier.fill="ivory",alpha = 0.5) +
+      # scale_fill_manual(ys=levels(col_subclass)) +
+      geom_jitter(color=p_long$color,
+                  size=0.1,show.legend = TRUE,
+                  alpha=0.2) +
+
+      #theme_ipsum() +
+      theme(
+        legend.position="left",
+        plot.title = element_text(size=11)
+      ) +
+      ggtitle("Beta ys between young and old") +
+      xlab("Cells")+
+    ylab("relative fraction")+
+            scale_x_discrete(guide = guide_axis(angle = 60))+
+    
+    facet_wrap(as.formula(paste("~ ref + model" )),ncol = 4)
+  
+   
+p2<-ggplot(p_long[ref!="cgSetm",], aes(x=variable, y=value, fill= variable)) +
+     geom_boxplot(aes(fill=variable),outlier.fill="ivory",alpha = 0.5) +
+      # scale_fill_manual(ys=levels(col_subclass)) +
+      # geom_jitter(#color=pdata$color,
+      #             size=0.1,show.legend = TRUE,
+      #             alpha=0.2) +
+
+      #theme_ipsum() +
+      theme(
+        legend.position="left",
+        plot.title = element_text(size=11)
+      ) +
+      ggtitle("Beta ys between young and old") +
+      xlab("Cells")+
+    ylab("relative fraction")+
+            scale_x_discrete(guide = guide_axis(angle = 60))+
+    
+    facet_wrap(as.formula(paste("~ ref + model" )),ncol = 2)
+p2
+
+```
+
+## Inhouse reference datasets {#sec-inhouseref}
+
+Since we suspect that our disease is related to accelarated aging but we don't really know if one reference data is going to be better than the other we will create 3 different reference datasets:
+
+We will also inspect which pathways are realted to each of these sets.
+
+```{r}
+pathways_refsets<-list()
+```
+
+To do that we will need to add gene names to our data.frame. In this case we will use the convinient annotation provided by illumina plataform for their EPIC methylation arrays. 
+
+```{r}
+library(data.table)
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+
+# 1. Get gene names from EPIC annotation object
+EPIC_anno<-data.table::as.data.table(as.data.frame(IlluminaHumanMethylationEPICanno.ilm10b2.hg19::Other),keep.rownames = "cg")
+data.table::setkey(EPIC_anno,cg)
+
+# 2. Filter for significant probes and absolute mean difference of beta values > 0.05 
+dt<-p_long[model=="sig_mod"&abs(diff)>0.05,.SD,.SDcols=c("ref","cg","type","diff")]
+
+# 3. add gene name information to our data.table
+data.table::setkey(dt,cg)
+dt$gene_name <- EPIC_anno[dt$cg,UCSC_RefGene_Name]
+```
+
+```{r}
+head(dt)
+```
+
+#### cgIn_consensus:
+
+The consensus set by merging all reference sets and selecting significant probes in our model.
+
+```{r}
+probelist$cgIn_consensus <- unique(dt$cg)#intersect(row.names(sig_mod), unique(unlist(probelist)))
+```
+
+Now we  will look at the associated pathways to that reference set:
+
+```{r}
+# Crete a list to store pathways results:
+cgIn_consensus<-list()
+
+# Subset annotation to the corresponding probeset:
+anno<-dt[probelist$cgIn_consensus,]
+
+# Get hypomethylated genes list: 
+genes.hypo <- unique(unlist(sapply(
+  anno[type=="hypo",gene_name]
+  ,function(x)unlist(strsplit(x,";")))))
+
+# Get pathways associated with the previous set:
+pathways.hypo <- gprofiler2::gost(signif = T ,genes.hypo)
+
+# Store results 
+cgIn_consensus$hypo <- pathways.hypo[[1]]
+
+# Repeat for hypermethylated genes: 
+
+genes.hyper <- unique(unlist(sapply(
+  anno[type=="hyper",gene_name]
+  ,function(x)unlist(strsplit(x,";")))))
+pathways.hyper <- gprofiler2::gost(signif = T ,genes.hyper)
+
+# Store results 
+cgIn_consensus$hyper <- pathways.hyper[[1]]
+
+pathways_refsets[["cgIn_consensus"]]<-cgIn_consensus
+```
+
+#### cgIn_top:
+
+Select the top significant probes in our model. We will use limma's topTable function to get the top 5000 most significant probes.
+
+```{r}
+probelist$cgIn_top <- rownames(limma::topTable(full_mod,number=5000))
+```
+
+#### cgIn_literature:
+
+From all the reference datasets in the paper, cgSet_pre contains more DMPs in our data than any other.
+
+```{r}
+probelist$cgIn_literature <- intersect(
+  rownames(sig_mod),
+  probelist$cgSet_pre
+  )
+```
+
+#### cgIn_PBMC:
+
+Although it has less %DMPs than When we perform the t-test the dataset from PBMC cell line without changes in expression has a lower p-value.
+
+```{r}
+probelist$cgIn_NO <- intersect(
+  rownames(sig_mod),
+  probelist$cgSet_NO
+  )
+```
+
+# Question 2: DMPs in disease {#sec-disease}
+
+The next question we have to answer is if the methylation of the age_related profiles is higher in the disease group than in controls. Or in other words, if there is an accelerated aging for the samples with the disease. So first we remove the effect of age in methylation and then we check for the methylation differences in the age-related probes.
+
+## AMN_Adults:
+
+Since we only have childs with the cerebral condition, and we believe that the disease could behave differently in childs and adults, we will first only focus in adults with AMN, cAMN (AMN + cerebral) and controls.
+
+```{r}
+library(targets)
+library(data.table)
+ss_adults<-ss_clean_inhouse[Age > 18, ]
+targets::tar_load(filtered_inhouse)
+adults<-filtered_inhouse[,ss_adults$Sample_Name]
+dim(adults)
+
+```
+
+There are `r dim(adults)[1]` probes that pass QC and `r dim(adults)[2]` control samples in our dataset.
+
+```{r}
+table(ss_adults$Type)
+```
+
+Also, we can distinguish between controls and the two types of disease AMN and cerebral.
+
+```{r}
+table(droplevels.factor(ss_adults$Condition))
+```
+
+Thus, we have 2 possible different comparisons. Either we group togehter all the patients or we distinguish 2 phenotypes.
+
+### Normalization:
+
+Following the aforementioned paper [by Wilma, T. et al](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4082572/) we now normalize the data using the subset-quantile within array normalization (SWAN) method:
+
+```{r}
+library(minfi)
+norm<-minfi::preprocessSWAN(adults)
+clean <- prep(norm, remove_sex=F, arraytype="EPIC")
+```
+
+### Methylation differences:
+
+Since we are interested in age related differences caused by the disease we must remove normal methylation changes due to age. Then remaining differences in methylation in previously selected age-related probes can be attributed to the disease phenotypes. There are 2 ways of removing the effects of age.
+
+1.  We can remove the effect of Age from the data by regressing on Age and using the residuals to fit a second model. Then we can use the disease group as the predictor variable to see if any group is showing more methylation than the controls for the age-specific sites.
+
+2.  Another option is to add Age as a covariate in the model.
+
+#### Model1: correct for age and use residuals:
+
+```{r}
+source("../meth_functions.R")
+mvals<-getM(clean) 
+design <- model.matrix(~Age,data = ss_adults)
+age_fit <- limma::lmFit(mvals, design=design )
+res <- residuals(age_fit, mvals)
+```
+
+Now we perform a linear model comparing disease and control group:
+
+```{r}
+res_mod_ext <- mod(object = res, group_var = "Condition",
+                        singular=F,pairwise = T,
+                        metadata = ss_adults,
+                        idcol="Sample_Name")
+res_mod <- mod(object = res, group_var = "Type",
+                        singular=F,pairwise = T,
+                        metadata = ss_adults,
+                        idcol="Sample_Name")
+```
+
+```{r}
+sig_res_mod<-res_mod[abs(res_mod$t)>2 & res_mod$p.value < 0.01 ,]
+# Have to check the filters for each of the 3 contrasts by sepparate for example applying lapply on contrast. Will make one dmp for each of the contrasts.
+# sig_res_mod_ext<-res_mod_ext[abs(res_mod_ext$t)>2 & res_mod_ext$p.value < 0.01 ,]
+```
+
+`r nrow(sig_res_mod)` were significantly regulated (Lima *t* test, *p* \< 0.01) between the group of adult and child subjects using −2 \> *t* value \> 2 as a cut-off.
+
+```{r}
+library(cnv.methyl)
+library(minfi)
+dmps <- cnv.methyl::DMPextr(fit = sig_res_mod,                         # Toptable & stats
+                                            ContrastsDM = colnames(sig_res_mod$contrasts),
+                                            beta_normalized = minfi::getBeta(adults),
+                                            p.value = 0.01,
+                                            mDiff = 0.05,
+                                            ann = minfi::getAnnotation(adults),
+                                            writeOut = F)
+dmps$Type <- ifelse(dmps$diff_meanMeth > 0,"Hyper","Hypo")
+dmps<-as.data.table(dmps, keep.rownames=T)
+saveRDS(dmps,"data/dmps_adults.rds")
+dmps_ext <- cnv.methyl::DMPextr(fit = res_mod_ext,                         # Toptable & stats
+                                            ContrastsDM = colnames(res_mod_ext$contrasts),
+                                            beta_normalized = minfi::getBeta(adults),
+                                            p.value = 0.01,
+                                            mDiff = 0.05,
+                                            ann = minfi::getAnnotation(adults),
+                                            writeOut = F)
+dmps_ext$Type <- ifelse(dmps_ext$diff_meanMeth > 0,"Hyper","Hypo")
+dmps_ext<- as.data.table(dmps_ext[abs(dmps_ext$t)>2 & dmps_ext$P.Value < 0.01,],keep.rownames = T)
+saveRDS(dmps_ext,"data/dmps_adults_ext.rds")
+```
+
+The 2 dmp sets can be merged together into a single data.frame:
+
+```{r}
+library(data.table)
+DMPs <- rbind(dmps, dmps_ext)
+
+DMPs<-DMPs[,UCSC_RefGene_Name:=sapply(UCSC_RefGene_Name,function(x) paste(unique(unlist(strsplit(x,";"))),collapse = ";"))]
+NROW(DMPs)
+table(DMPs$Contrast)
+```
+
+So there are `r NROW(dmps)` DMPs.
+
+```{r}
+plotDMP(data.table::as.data.table(DMPs))
+```
+
+#### Model2: Add age as a covariate:
+
+```{r}
+
+
+source("../meth_functions.R")
+mvals<-getM(clean) 
+
+mod2_ext <- mod(object = mvals, group_var = "Condition",
+                        singular=F,pairwise = T,
+                        metadata = ss_adults,
+                        idcol="Sample_Name")
+mod2 <- mod(object = res, group_var = "Type",
+                        singular=F,pairwise = T,
+                        metadata = ss_adults,
+                        idcol="Sample_Name")
+```
+
+```{r}
+sig_mod2<-mod2[abs(mod2$t)>2 & mod2$p.value < 0.01 ,]
+# Have to check the filters for each of the 3 contrasts by sepparate for example applying lapply on contrast. Will make one dmp for each of the contrasts.
+# sig_mod2_ext<-mod2_ext[abs(mod2_ext$t)>2 & mod2_ext$p.value < 0.01 ,]
+```
+
+`r nrow(sig_mod2)` were significantly regulated (Lima *t* test, *p* \< 0.01) between the group of adult and child subjects using −2 \> *t* value \> 2 as a cut-off.
+
+```{r}
+library(cnv.methyl)
+library(minfi)
+dmps <- cnv.methyl::DMPextr(fit = sig_mod2,                         # Toptable & stats
+                                            ContrastsDM = colnames(sig_mod2$contrasts),
+                                            beta_normalized = minfi::getBeta(adults),
+                                            p.value = 0.01,
+                                            mDiff = 0.05,
+                                            ann = minfi::getAnnotation(adults),
+                                            writeOut = F)
+dmps$Type <- ifelse(dmps$diff_meanMeth > 0,"Hyper","Hypo")
+dmps<-as.data.table(dmps, keep.rownames=T)
+saveRDS(dmps,"data/dmps_mod2.rds")
+dmps_ext <- cnv.methyl::DMPextr(fit = mod2_ext,                         # Toptable & stats
+                                            ContrastsDM = colnames(mod2_ext$contrasts),
+                                            beta_normalized = minfi::getBeta(adults),
+                                            p.value = 0.01,
+                                            mDiff = 0.05,
+                                            ann = minfi::getAnnotation(adults),
+                                            writeOut = F)
+dmps_ext$Type <- ifelse(dmps_ext$diff_meanMeth > 0,"Hyper","Hypo")
+dmps_ext<- as.data.table(dmps_ext[abs(dmps_ext$t)>2 & dmps_ext$P.Value < 0.01,],keep.rownames = T)
+saveRDS(dmps_ext,"data/dmps_mod2_ext.rds")
+```
+
+The 2 dmp sets can be merged together into a single data.frame:
+
+```{r}
+library(data.table)
+DMPs2 <- rbind(dmps, dmps_ext)
+
+DMPs2<-DMPs2[,UCSC_RefGene_Name:=sapply(UCSC_RefGene_Name,function(x) paste(unique(unlist(strsplit(x,";"))),collapse = ";"))]
+NROW(DMPs2)
+table(DMPs2$Contrast)
+```
+
+So there are `r NROW(DMPs2)` DMPs2.
+
+```{r}
+plotDMP(data.table::as.data.table(DMPs2))
+```
+
+```{r}
+DMPs_tab <- rbind(
+  cbind(model="m1",DMPs[,table(Type, Contrast)]),
+  cbind(model="m2",DMPs2[,table(Type, Contrast)])
+)
+
+DMPs_tab
+```
+
+Both models are really similar and we see some differences in methylation for some of the sites. There are not many differences between AMN and the controls, maybe because the hetereogeneity of AMN group and the inbalance on the samples. In any case, the differences are very subtle even with a very permisive threshold.
+
+```{r}
+DMPs2[Contrast == "AMN-CTL.adult",list(probe=rn,chr,pos,Type,Beta_difference=round(diff_meanMeth,2),gene=UCSC_RefGene_Name,UCSC_RefGene_Group,Relation_to_Island) ]
+```
+
+As you can observe the difference in beta values are lower than 0.1 and the positions sparse.
+
+Nevertheless there are some sites spotted for cAMN vs controls. Furthermore, of special interest are the number of DMPs related to the contrast AMN-cAMN. Since cAMN shows greater differences with AMN than with the controls, the same way for AMN.
+
+```{r}
+dt <- DMPs2[Contrast == "AMN-cAMN",list(probe=rn,chr,pos,Type,Beta_difference=round(diff_meanMeth,2),gene=UCSC_RefGene_Name,UCSC_RefGene_Group,Relation_to_Island) ]
+range(dt[["Beta_difference"]])
+head(dt[order(-abs(dt[["Beta_difference"]]))],20)
+
+```
+
+As shown in the table above there are much higher differences between the 2 conditions than between either of them with the control. This suggest that rather than having more methylation in the same direction by favouring similar methylation processes there may be different mechanisms involved methylating different sites for AMN and cAMN.
+
+
+
+
+### reference vs Adults:
+
+#### data inspection:
+
+We have 4 models:
+
+1.  Age corrected by fitting residuals (m1):
+
+    -   `res_mod` 2 factors: control & disease
+
+    -   `res_mod_ext`3 factors: 2 disease AMN cAMN + controls
+
+2.  Condition + Age as covariate:
+
+    -   `mod2`2 factors: control & disease
+
+    -   `mod2_ext` 3 factors: 2 disease AMN cAMN + controls
+
+We have 8 reference sets, inside our probelist list object. The same 4 reference sets used previously with the controls with cgsites extracted from the paper *supplementary material (tables 2S, 3S & 4S)* plus the 4 datasets that come from our own controls by comparing young and old healthy subjects @sec-inhouseref.
+
+In order to assess the enrichment of each dataset for our disease in a quantitative manner, the percentage of probes in each of the sets that are significantlly methylated is calculated.
+
+```{r}
+cont<-colnames(res_mod_ext$contrasts)
+
+tab <- t(sapply(probelist,function(x) table(rownames(res_mod) %in% x)))
+tab2 <- t(sapply(probelist,function(x) table(rownames(sig_res_mod) %in% x)))
+tab3 <- sapply(cont,function(x){
+  x=names(res_mod_ext$t[,x])
+  sapply(probelist,function(p) length(intersect(x,p)))
+  })
+tab4 <- data.table::as.data.table(sapply(cont,function(x){
+  x=names(res_mod_ext$t[,x][abs(res_mod_ext$t[,x])>2])
+  sapply(probelist,function(p) length(intersect(x,p)))
+  }),keep.rownames = T)
+
+dtab<-tab4[,"Disease-Control":=tab2[,2]]
+dtab[,"Common_probes":=tab[,2]]
+dtab[, total := sapply(probelist,NROW)]
+dtab[, model := "m1"]
+
+#### model2
+tab <- t(sapply(probelist,function(x) table(rownames(mod2) %in% x)))
+tab2 <- t(sapply(probelist,function(x) table(rownames(sig_mod2) %in% x)))
+tab3 <- sapply(cont,function(x){
+  x=names(mod2_ext$t[,x])
+  sapply(probelist,function(p) length(intersect(x,p)))
+  })
+tab4 <- data.table::as.data.table(sapply(cont,function(x){
+  x=names(mod2_ext$t[,x][abs(mod2_ext$t[,x])>2])
+  sapply(probelist,function(p) length(intersect(x,p)))
+  }),keep.rownames = T)
+
+dtab2<-tab4[,"Disease-Control":=tab2[,2]]
+dtab2[,"Common_probes":=tab[,2]]
+dtab2[, total := sapply(probelist,NROW)]
+dtab2[, model := "m2"]
+
+Dtab <- rbind(dtab,dtab2)
+per<-Dtab[,c( Common_probes, total,
+             lapply(.SD,function(x)paste0(x," (",round(x/as.numeric(Common_probes) *100,2),"%)"))
+),by=c("rn","model"),.SDcols=unique(DMPs$Contrast)]
+
+per
+```
+
+In general, all the sets perform in a similar way except for the one selecting top5000 DMPs.
+
+The 2 sets that seem to be more enriched for age-related methylation changes are the one based on our own controls `cgIn_top` and the one with no associated expression change `cgIn_NO`. It is not surprising to see that the set of probes based on the differences observed from our own data outperforms the sets coming from other sources.
+
+In respect with the set with no-expression, in the paper they hypothesize that methylation changes uncorrelated with changes in expression may be caused by aging.
+
+### ~~Discarded:~~
+
+~~In order to see if the aging factor has a major effect in the DMPs between control and disased we can check if the groups are enriched in DMPs for the sites in the reference age-related probes. So if the proportion of DMPs in age-related areas is higher than the overall average proportion of DMPs, this suggests that the set is enriched.~~
+
+##### ~~A. Overall ammount of methylation in each contrast vs proportion of methylation for the probes in age signature sets~~
+
+~~To find the proportion of significantlly methylated probes for each of the contrasts the number of sig. methylated cgs of each contrast are divided by the total number of probes.~~
+
+```{r}
+
+
+dt <- data.table::as.data.table(t(sapply(cont,function(x){
+  x=names(res_mod_ext$t[,x][abs(res_mod_ext$t[,x])>2])
+   round(length(intersect(x,rownames(res_mod_ext)))/NROW(res_mod_ext) *100,2)
+  })),keep.rownames = T)
+dt[,"Disease-Control":=round(length(intersect(rownames(sig_res_mod),rownames(res_mod)))/NROW(res_mod) *100,2)]
+dt2 <- data.table::as.data.table(t(sapply(cont,function(x){
+  x=names(mod2_ext$t[,x][abs(mod2_ext$t[,x])>2])
+   round(length(intersect(x,rownames(mod2_ext)))/NROW(mod2_ext) *100,2)
+  })),keep.rownames = T)
+dt2[,"Disease-Control":=round(length(intersect(rownames(sig_mod2),rownames(res_mod)))/NROW(mod2) *100,2)]
+```
+
+~~Interestingly enough, although the proportion of DMPs is evenly distributed for each of the age signatures, as stated before, we find that cAMN-CTL.adult has almost the double of DMPs while it presents the half of overlapping probes with the age signature datasets.~~
+
+##### ~~B. Perform a randomization:~~
+
+~~de las significant propbes coger un subsample random del mismo tamaño que el probset de aging~~
+
+```{r}
+sim <- data.table::as.data.table(sapply(cont,function(x){
+  sigprobes=names(res_mod_ext$t[,x][abs(res_mod_ext$t[,x])>2])
+  # N_sigprobes = length(sigprobes)
+  sapply(probelist,function(pl) {
+    simset <- sample(sigprobes, length(pl),replace = F)
+    length(intersect(pl,simset))
+    })
+  
+  }),keep.rownames = T)
+
+
+# sample(rownames(res_mod),size = )
+```
+
+#### Betas:
+
+```{r}
+
+
+# Row index to multiply by betas taking the columns present in each contrast multiplying by 1/0
+design_FULL <- t(full_mod$design)
+# For each row on design (columns selected for each contrast) do betas * 1/0 to get the correct columns and then do the mean values for each group:
+betas_c_FULL <-apply(design_FULL , 1 , function(x) apply(betas[] %*% diag(x),1 , function(y) mean(y[y!=0])))
+
+betas <- minfi::getBeta(adults)
+models<-list(res_mod=res_mod,
+             res_mod_ext=res_mod_ext,
+             mod2=mod2,
+             mod2_ext=mod2_ext)
+
+betas_c <- lapply(names(models),function(model_name){
+  # Row index to multiply by betas taking the columns present in each contrast multiplying by 1/0
+  fit<-models[[model_name]]
+  design <- t(fit$design)
+
+  dt_c<-rbindlist(lapply(names(probelist), function(n){
+    idx<-intersect(probelist[[n]],rownames(fit))
+    cgs<-intersect(idx,rownames(betas))
+    b <- betas[cgs,]
+    # For each row on design (columns selected for each contrast) do betas * 1/0 to get the correct columns and then do the mean values for each group:
+    dt=as.data.table(apply(design , 1 , function(x) apply(b %*% diag(x),1 , function(y) mean(y[y!=0]))))
+    dt$ref=n
+    dt$cg<-cgs
+    dt$model=model_name
+    dt
+    b<-melt(dt,id.vars = c("ref","cg","model"),variable.name = "Condition",value.name = "bVal")->b
+    b
+    }
+  ))
+  dt_c
+})
+names(betas_c)<- names(models)
+pdata<-rbindlist(betas_c)
+pdata<-pdata[!is.na(bVal),]
+pdata[startsWith( model,"res_mod"),model:="residuals"]
+pdata[startsWith( model,"mod2"),model:="covariate"]
+
+```
+
+We are ready to test mean differences and plot:
+
+
+#### Plots:
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+  p1<-ggplot(pdata, aes(x=Condition, y=bVal, fill= bVal)) +
+     geom_boxplot(aes(fill=Condition),outlier.fill="ivory",alpha = 0.5) +
+  
+      theme(
+        legend.position="left",
+        plot.title = element_text(size=11)
+      ) +
+      ggtitle("Beta values ") +
+      xlab("Cells")+
+    ylab("relative fraction")+
+            scale_x_discrete(guide = guide_axis(angle = 60))+
+
+    facet_wrap(as.formula(paste("~ ref + model" )),ncol = 4)
+
+p1
+```
+
+It seems from the visual inspection of the plots that there is more methylation for cAMN group than for the rest of the conditions, but are the methylation differences for that category really significant?
+
+Lets test:
+
+#### Significance test:
+
+```{r controls t.test}
+#| label: tbl-adult.z-test
+#| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
+zt<-list()
+pdata[,sd:=stats::sd(bVal),by=c("model","Condition")]
+sd_tab<-pdata[,unique(sd),by=Condition]
+pdata_w<-dcast(pdata,cg+model+ref~Condition,value.var = c("bVal"))
+z_bimodal_Disease <- pdata_w[,c(
+  N=.N,
+  BSDA::z.test(
+    TypeControl,
+    TypeDisease,
+    sigma.x=sd_tab[Condition=="TypeControl",V1],
+    sigma.y=sd_tab[Condition=="TypeDisease",V1]
+    )
+  ),by=c("ref","model")]
+z_bimodal_Disease[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_Disease[,condition:="Disease"]
+zt[["Disease"]] <- dcast(z_bimodal_Disease, ref + model + condition+ N + p.value ~ group, value.var = c("estimate"))
+
+
+
+z_bimodal_AMN <- pdata_w[,c(
+  N=.N,
+  BSDA::z.test(
+    ConditionCTL.adult,
+    ConditionAMN,
+    sigma.y=sd_tab[Condition=="ConditionCTL.adult",V1],
+    sigma.x=sd_tab[Condition=="ConditionAMN",V1]
+    )
+  ),by=c("ref","model")]
+
+z_bimodal_AMN[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_AMN[,condition:="AMN"]
+zt[["AMN"]] <- dcast(z_bimodal_AMN, ref + model + condition+ N + p.value ~ group, value.var = c("estimate"))
+
+z_bimodal_cAMN <- pdata_w[,c(
+  N=.N,
+  BSDA::z.test(
+    ConditionCTL.adult,
+    ConditioncAMN,
+    sigma.x=sd_tab[Condition=="ConditionCTL.adult",V1],
+    sigma.y=sd_tab[Condition=="ConditioncAMN",V1]
+        )
+  ),by=c("ref","model")]
+z_bimodal_cAMN[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_cAMN[,condition:="cAMN"]
+zt[["cAMN"]] <- dcast(z_bimodal_cAMN, ref + model + condition+  N + p.value ~ group, value.var = c("estimate"))
+
+ztab<-rbindlist(zt)
+# t_bimodal <- pdata[,t.test(child,adult),by=c("ref","model","type")]
+
+ztab[,diff:=Case-Ctl]
+data.table::setorder(ztab,p.value,diff)
+kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
+# kableExtra::kbl(z_bimodal[,.SD,.SDcols=c("ref","model","type","estimate","conf.int","p.value")],digits=2) |> kableExtra::kable_classic()
+```
+
+We see there is a small difference in methylation for the dataset built with our controls and also for the dataset from literature.
+
+
+
+
+# Question 3: Age signature relataed to the disease
+
+
+
+###############
+
+[Epigenome-wide association study and epigenetic age acceleration associated with cigarette smoking among Costa Rican adults](https://www.nature.com/articles/s41598-022-08160-w)
+
+Calculation of epigenetic aging biomarkers
+
+Epigenetic age was calculated using five clocks: the Horvath Pan Tissue, Horvath Skin-Blood, Hannum Blood, PhenoAge, and GrimAge clocks. We calculated all epigenetic aging biomarkers utilizing the online Horvath calculator (http://dnamage.genetics.ucla.edu/) with the advanced analysis option. The outcome of interest was the “AgeAccelerationResidual” or residuals resulting from a linear regression model where each DNA methylation clock is regressed on chronological age of each participant. We refer to all acceleration measures as Epigenetic Age Acceleration (EAA) for the specific clock and defined the residuals of the DNA methylation estimate of telomere length linearly regressed on chronological age as DNAmTL adjusted for age. A positive EAA indicates that the estimated epigenetic age is higher than the chronological age (increased biological aging) and a negative DNAmTL adjusted for age reflects a shorter telomere length. In addition, we tested Extrinsic EAA (EEAA) and Intrinsic EAA (IEAA) for Hannum’s and Horvath’s clocks, respectively51. The EEAA measure is associated with age-related changes in blood cell counts due to immune system aging and is calculated by upweighting the contributions of age-associated blood cell counts (naive cytotoxic T cells, exhausted cytotoxic T cells, and plasmablasts). The IEAA measure is independent of blood cell counts, represents intrinsic cellular aging, and is calculated by adding immune cell counts in addition to chronological age when calculating regression residuals. Analyses of epigenetic clocks included the 489 participants with high quality DNA methylation data.
+
+Age calculator:
+
+```{r}
+ss_horvath<-ss_adults
+ss_horvath$Female=0
+ss_horvath$Tissue="Blood PBMC" 
+ss_horvath[,SampleID:=Sample_Name]
+ss_horvath$Sample_Name<-NULL
+setcolorder(ss_horvath,"SampleID")
+b<-as.data.table(betas,keep.rownames = T)
+b[,ProbeID:=rn]
+b$rn<-NULL
+setcolorder(b,c("ProbeID",ss_horvath$SampleID))
+fwrite(b,"data/adult_betas.csv")
+fwrite(ss_horvath,"data/ss_adults.csv")
+```
+
+Now this data is sent to the horvath calculator and these are the results:
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+###############

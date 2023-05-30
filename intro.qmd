@@ -1,5 +1,13 @@
-# Introduction
+# XALD Project: Study of methylation changes in Age-related cg sites associated with XALD disease  
 
-This is a book created from markdown and executable code.
+This book is created to give answer to the following questions:
 
-See @knuth84 for additional discussion of literate programming.
+1. Is there an age-accelerating factor for XALD patients according to the changes in methylation?
+
+2. Which is the methylation mark associated with XALD disease?
+
+<figure id="gr1" class="" tabindex="0"><img class="b-lazy b-loaded ux-lazyloaded" loading="lazy" alt="Figure thumbnail gr1" data-locator="undfig1" data-high-res="https://www.cell.com/cms/attachment/2969fef9-12c8-499f-a5ef-45301231fb4d/gr1.jpg" data-large-image="https://www.cell.com/cms/attachment/2969fef9-12c8-499f-a5ef-45301231fb4d/gr1.jpg" src="https://www.cell.com/cms/attachment/2969fef9-12c8-499f-a5ef-45301231fb4d/gr1.jpg"><figcaption><div class="figure__caption__body"><div class="figure__title"><span data-fv-label="Figure" class="label figure__label"></span><span class="figure__title__text">Image by Kip Lyall.</span></div><ul class="rlist--inline separator download-links"><li><a target="_blank" href="https://www.cell.com/cms/attachment/2969fef9-12c8-499f-a5ef-45301231fb4d/gr1.jpg" title="View Large Image in a new tab">View Large
+                                            Image
+                                        </a></li><li class="download-links__figureViewer"><a href="#" class="figure__open__ctrl">Figure Viewer</a></li><li><a href="https://www.cell.com/cms/attachment/2969fef9-12c8-499f-a5ef-45301231fb4d/gr1.jpg" class="download-links__download-Hi-res" target="_blank" download="">Download Hi-res
+                                            image
+                                        </a></li><li class="hidden-xs"><a href="/action/downloadFigures?pii=S0092-8674(15)00628-5&amp;id=gr1.jpg" class="download-links__download-This">Download (PPT)</a></li></ul></div></figcaption></figure>

@@ -732,7 +732,7 @@ Since we only have childs with the cerebral condition, and we believe that the d
 ```{r}
 library(targets)
 library(data.table)
-ss_adults <- ss[Age > 18, ]
+ss_adults <- readRDS("data/ss_Adults.rds")
 
 rgSet <- cnv.methyl::read.metharray.exp.par(targets=ss_adults,ncores = 36,folder = "analysis/intermediate/")
 rgSet <- minfi::read.metharray.exp(targets = ss_adults)

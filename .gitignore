@@ -28,3 +28,5 @@ vignettes/*.pdf
 .Renviron
 /.quarto/
 results
+_targets
+data-raw/idats/

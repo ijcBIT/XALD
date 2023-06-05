@@ -1091,8 +1091,11 @@ betas_res <- lapply(names(models),function(model_name){
 })
 names(betas_res)<-names(models)
 
-dtb_res <- as.data.table(betas,keep.rownames = "cg")
-dtbm_res <- melt(dtb_res,variable.name = "Sample_Name", value.name = "bVal")
+b2_dt <- as.data.table(res,keep.rownames = "cg")
+b2_m <- melt(b2_dt,variable.name = "Sample_Name", value.name = "bVal")
+b2_res<-merge(b2_m,ss_adults[,.SD, .SDcols=c("Sample_Name", "Age","Condition")])
+b2_res$model="residuals"
+
 ```
 
 ```{r betas covariate model}
@@ -1127,25 +1130,32 @@ betas_cov <- lapply(names(models),function(model_name){
   dt_c
 })
 names(betas_cov)<-names(models)
-dtb_cov <- as.data.table(betas,keep.rownames = "cg")
-dtbm_cov <- melt(dtb_cov,variable.name = "Sample_Name", value.name = "bVal")
+dtb_cov <- rbindlist(betas_cov)
+dtbm_cov <- melt(dtb_cov, value.name = "bVal",)
+dtbm_cov <- dtbm_cov[Condition!="Age"]
+dtbm_cov$model <- "covariate"
+
+
+b2_dt <- as.data.table(betas,keep.rownames = "cg")
+b2_m <- melt(b2_dt,variable.name = "Sample_Name", value.name = "bVal")
+b2_cov<-merge(b2_m,ss_adults[,.SD, .SDcols=c("Sample_Name", "Age","Condition")])
+b2_cov$model="covariate"
 ```
 
 
 ```{r}
-betas_desease<-c(betas_cov,betas_res)
-pdata<-rbindlist(betas_desease)
+# Mean Beta values for the contrasts:
+pdata<-rbind(dtbm_cov,dtbm_res)
 pdata<-pdata[!is.na(bVal),]
+pdata<-pdata[Condition !="Age",]
 pdata[startsWith( model,"res_mod"),model:="residuals"]
 pdata[startsWith( model,"mod2"),model:="covariate"]
 
 ```
 
 ```{r}
-dtb <- as.data.table(pdata,keep.rownames = "cg")
-dtbm <- melt(dtb,variable.name = "Sample_Name", value.name = "bVal")
-dtbm<-dtbm[Condition != "Age",]
-betas_age<-merge(dtbm,ss_adults[,.SD, .SDcols=c("Sample_Name", "Age","Condition")])
+#Beta Values for individual samples: 
+pdata_indiv<-rbind(b2_cov,b2_res)
 ```
 
 We are ready to test mean differences and plot:
@@ -1166,25 +1176,24 @@ Here we inspect the top DMP sites individually.
 
 ```{r}
 #| column: page
-#| column: screen-inset-shaded
 #| layout-ncol: 2
 
 topDMPs<-dmp10[dmp10[,probe] %in% betas_age$cg,]
 
 library(ggplot2)
 library(gridExtra)
-setkey(betas_age,cg)
+setkey(pdata_indiv,cg)
 plts<-lapply(
   unique(topDMPs$probe),
   function(ProbeID){
-    dt_mean <- betas_age[ProbeID,list(b=mean(bVal),avage=mean(Age)),by=Condition]
+    dt_mean <- pdata_indiv[ProbeID,list(b=mean(bVal),avage=mean(Age)),by=c("Condition","model")]
     
     print(ProbeID)
-    p<-ggplot(betas_age[ProbeID,], aes(x = Age, y = bVal, color=Condition )) +
+    p<-ggplot(pdata_indiv[ProbeID,], aes(x = Age, y = bVal, color=Condition, group=factor(model) )) +
     geom_point() +
     geom_point(data=dt_mean,aes(x=avage,y=b,col=Condition),size=4,shape=24)  +
     geom_smooth(aes(group=Condition),
-              method = "lm", formula = y ~ x, se = T) +
+              method = "lm", formula = y ~ x, se = F) +
 
     labs(title=paste0('Residual vs. Age for: ',ProbeID), x='Age', y='Residuals')  
     
@@ -1231,14 +1240,15 @@ Lets test:
 
 #### Significance test:
 
-```{r controls t.test}
+```{r model covariate t.test}
 #| label: tbl-adult.z-test
 #| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
+pdata_res<-pdata[model == "covariate",]
 zt<-list()
-pdata[,sd:=stats::sd(bVal),by=c("model","Condition")]
-sd_tab<-pdata[,unique(sd),by=Condition]
-pdata_w<-dcast(pdata,cg+model+ref~Condition,value.var = c("bVal"))
-z_bimodal_Disease <- pdata_w[,c(
+pdata_res[,sd:=stats::sd(bVal),by=c("model","Condition")]
+sd_tab<-pdata_res[,unique(sd),by=Condition]
+pdata_res_w<-dcast(pdata_res,cg+model+ref~Condition,value.var = c("bVal"))
+z_bimodal_Disease <- pdata_res_w[,c(
   N=.N,
   BSDA::z.test(
     TypeControl,
@@ -1253,7 +1263,7 @@ zt[["Disease"]] <- dcast(z_bimodal_Disease, ref + model + condition+ N + p.value
 
 
 
-z_bimodal_AMN <- pdata_w[,c(
+z_bimodal_AMN <- pdata_res_w[,c(
   N=.N,
   BSDA::z.test(
     ConditionCTL.adult,
@@ -1267,7 +1277,7 @@ z_bimodal_AMN[,group:=rep(c("Ctl","Case"),.N/2)]
 z_bimodal_AMN[,condition:="AMN"]
 zt[["AMN"]] <- dcast(z_bimodal_AMN, ref + model + condition+ N + p.value ~ group, value.var = c("estimate"))
 
-z_bimodal_cAMN <- pdata_w[,c(
+z_bimodal_cAMN <- pdata_res_w[,c(
   N=.N,
   BSDA::z.test(
     ConditionCTL.adult,
@@ -1281,13 +1291,73 @@ z_bimodal_cAMN[,condition:="cAMN"]
 zt[["cAMN"]] <- dcast(z_bimodal_cAMN, ref + model + condition+  N + p.value ~ group, value.var = c("estimate"))
 
 ztab<-rbindlist(zt)
-# t_bimodal <- pdata[,t.test(child,adult),by=c("ref","model","type")]
+# t_bimodal <- pdata_res[,t.test(child,adult),by=c("ref","model","type")]
 
 ztab[,diff:=Case-Ctl]
 data.table::setorder(ztab,p.value,diff)
 kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
 # kableExtra::kbl(z_bimodal[,.SD,.SDcols=c("ref","model","type","estimate","conf.int","p.value")],digits=2) |> kableExtra::kable_classic()
 ```
+
+```{r model residuals t.test}
+#| label: tbl-adult.z-test
+#| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
+pdata_res<-pdata[model == "residuals",]
+zt<-list()
+pdata_res[,sd:=stats::sd(bVal),by=c("model","Condition")]
+sd_tab<-pdata_res[,unique(sd),by=Condition]
+pdata_res_w<-dcast(pdata_res,cg+model+ref~Condition,value.var = c("bVal"))
+z_bimodal_Disease <- pdata_res_w[,c(
+  N=.N,
+  BSDA::z.test(
+    TypeControl,
+    TypeDisease,
+    sigma.x=sd_tab[Condition=="TypeControl",V1],
+    sigma.y=sd_tab[Condition=="TypeDisease",V1]
+    )
+  ),by=c("ref","model")]
+z_bimodal_Disease[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_Disease[,condition:="Disease"]
+zt[["Disease"]] <- dcast(z_bimodal_Disease, ref + model + condition+ N + p.value ~ group, value.var = c("estimate"))
+
+
+
+z_bimodal_AMN <- pdata_res_w[,c(
+  N=.N,
+  BSDA::z.test(
+    ConditionCTL.adult,
+    ConditionAMN,
+    sigma.y=sd_tab[Condition=="ConditionCTL.adult",V1],
+    sigma.x=sd_tab[Condition=="ConditionAMN",V1]
+    )
+  ),by=c("ref","model")]
+
+z_bimodal_AMN[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_AMN[,condition:="AMN"]
+zt[["AMN"]] <- dcast(z_bimodal_AMN, ref + model + condition+ N + p.value ~ group, value.var = c("estimate"))
+
+z_bimodal_cAMN <- pdata_res_w[,c(
+  N=.N,
+  BSDA::z.test(
+    ConditionCTL.adult,
+    ConditioncAMN,
+    sigma.x=sd_tab[Condition=="ConditionCTL.adult",V1],
+    sigma.y=sd_tab[Condition=="ConditioncAMN",V1]
+        )
+  ),by=c("ref","model")]
+z_bimodal_cAMN[,group:=rep(c("Ctl","Case"),.N/2)]
+z_bimodal_cAMN[,condition:="cAMN"]
+zt[["cAMN"]] <- dcast(z_bimodal_cAMN, ref + model + condition+  N + p.value ~ group, value.var = c("estimate"))
+
+ztab<-rbindlist(zt)
+# t_bimodal <- pdata_res[,t.test(child,adult),by=c("ref","model","type")]
+
+ztab[,diff:=Case-Ctl]
+data.table::setorder(ztab,p.value,diff)
+kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
+# kableExtra::kbl(z_bimodal[,.SD,.SDcols=c("ref","model","type","estimate","conf.int","p.value")],digits=2) |> kableExtra::kable_classic()
+```
+
 
 We see there is a small difference in methylation for the dataset built with our controls and also for the dataset from literature.
 For more information about the pathways associated with the set of methylated genes for each reference set take a look at @sec-inhouseref set 

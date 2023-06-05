@@ -1241,7 +1241,7 @@ Lets test:
 #### Significance test:
 
 ```{r model covariate t.test}
-#| label: tbl-adult.z-test
+#| label: tbl-adult.z-test cov model
 #| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
 pdata_res<-pdata[model == "covariate",]
 zt<-list()
@@ -1300,7 +1300,7 @@ kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
 ```
 
 ```{r model residuals t.test}
-#| label: tbl-adult.z-test
+#| label: tbl-adult.z-test residuals model
 #| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
 pdata_res<-pdata[model == "residuals",]
 zt<-list()

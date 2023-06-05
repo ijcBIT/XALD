@@ -25,7 +25,7 @@ website:
         text: "IJC-BIT"
       - icon: github
         href:  https://github.com/ijcBIT/XALD 
-        text: "Workshops website"
+        text: "XALD"
  
 
     style: "docked"
@@ -34,7 +34,7 @@ website:
     contents:
       - index.qmd
       - intro.qmd
-      - aging.qmd
+      - aging2.qmd
       - summary.qmd
       - references.qmd
 format:

@@ -30,3 +30,5 @@ vignettes/*.pdf
 results
 _targets
 data-raw/idats/
+_site
+analysis

@@ -1,3 +1,24 @@
 # Summary
 
-In summary, this book has no content whatsoever.
+In summary, in this book we tryed to answer the following questions:
+
+1. Is there an age-accelerating factor for XALD patients according to the changes in methylation?
+
+2. Which is the methylation mark associated with XALD disease?
+
+In order to give an answer we started by trying the conventional analysis following the standard workflow including preprocessing, data filtering, DMPs & DMRs identification and finally pathway analysis. We tried different combinations of cutoff values and thresholds for each step and we also tried adding more controls from external sources. 
+
+1. Conventional analysis using BIT pipline.
+
+2. Conventional approach + external controls from GEO.
+
+Since the results from this conventional analysis where not satisfying we then tryed some other analysis replicating existing literature on DNA methylation associated with age:  
+
+3. Checking for age-related signatures following the workflow described in @Steegenga2014
+
+4. Checking age acceleration as decribed by @Horvath2013
+
+This second approach allowed us to give an answer to the above questions.
+
+1. We identified a particular set of age-related genes that were differentially methylated for the XALD + cerebral in adult patients.
+2. We identified the main pathways associated with the disease.

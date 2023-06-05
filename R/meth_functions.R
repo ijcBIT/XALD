@@ -334,7 +334,7 @@ densPlot <- function(dat, sampGroups = NULL, main = "", xlab = "Beta",
   # Save current graphical parameters
   opar <- par(no.readonly = TRUE)
   
-  # Make sure d and SampGroups are in the same order:
+  # Make sure d and sampGroups are in the same order:
 
   # Change the margins of the plot (the first is the bottom margin)
   par(mar = c(8, 4.1, 4.1, 2.1))
@@ -379,7 +379,7 @@ densPlot <- function(dat, sampGroups = NULL, main = "", xlab = "Beta",
 #' @title generate qc plots for signal distribution prior to filtering
 #' @param rgSet rgSet object containing channel intenisty values
 #' @param sampNames variable containing barcodes or ids matching colnames of the rgsetdata
-#' @param sampGroups variables to use for coloring groups
+#' @param sampGroups variables to use for coloring methods
 #' @param qc_folder path to the folder where plots will be saved
 #' @return plots 
 #' @author izar de Villasante
@@ -405,10 +405,10 @@ qc2 <- function(rgSet,sampGroups=NULL, sampNames= "Sample_Name", cols=NULL,
                qc_folder="analysis/intermediate/QC/"){
   path=paste0(qc_folder,"Report.pdf")
   colData = rgSet@colData
-  Sample_Group = colData[[sampGroups]]
+  Sample_method = colData[[sampGroups]]
   
   symrgSet = as.symbol(rgSet)
-  symsG = as.symbol(Sample_Group)
+  symsG = as.symbol(Sample_method)
   symsN = as.symbol(sampNames)
   symqc = as.symbol(qc_folder)
   symcols = as.symbol(cols)
@@ -431,13 +431,13 @@ qc<-function(rgSet,sampGroups=NULL, sampNames= "Sample_Name", cols=NULL,
   require(minfi)
   path=paste0(qc_folder,"Report.pdf")
   colData = rgSet@colData
-  Sample_Group = colData[[sampGroups]]
+  Sample_method = colData[[sampGroups]]
   if (!(sampNames %in% names(rgSet@colData))) sampNames <- colnames(rgSet)
   
   data.table::as.data.table(rgSet@colData)->ss
-  unlist(ss[order(Sample_Group),..idcol])->idx
+  unlist(ss[order(Sample_method),..idcol])->idx
   rgSet<-rgSet[,idx]
-  if(is.null(cols))cols<-get_cols(factor(ss$Sample_Group))
+  if(is.null(cols))cols<-get_cols(factor(ss$Sample_method))
   dir.create(qc_folder,recursive=T,showWarnings = F)
   minfi::qcReport(rgSet = rgSet,
                   pdf = paste0(qc_folder,"Report.pdf"),
@@ -593,7 +593,7 @@ corpca <- function(beta_top100,metadata,vars=NULL,idcol="barcode",
 #' @title generate PCA bi-plots
 #' @param pca prcomp object
 #' @param ss data.frame/data.table samplesheet with metadata info.
-#' @param colgroup character colname in ss. color based on this variable
+#' @param colmethod character colname in ss. color based on this variable
 #' @param s character colname in ss. shape according to categories of that variable
 #' @param combs 2D matrix default = combn(4,2). 1st row = X , 2nd row = Y. maps PCs to plot 
 #' @param cols color palette to use default bult-in get_cols() function.
@@ -605,7 +605,7 @@ corpca <- function(beta_top100,metadata,vars=NULL,idcol="barcode",
 #' @author izar de Villasante
 #' @export
 #'
-bplot<-function(pca,ss,colgroup,s,combs=NULL,cols=NULL ,tit= NULL,labs=T,overlap=Inf,alfa=0.3,folder = "analysis/pca/bplots/",idcol="Sample_Name"){
+bplot<-function(pca,ss,colmethod,s,combs=NULL,cols=NULL ,tit= NULL,labs=T,overlap=Inf,alfa=0.3,folder = "analysis/pca/bplots/",idcol="Sample_Name"){
 
   # deps<-c("ggfortify","ggrepel","gplots","ggplot2")
   # sapply(deps,function(x){if(!require(x))renv::install(x)})
@@ -619,7 +619,7 @@ bplot<-function(pca,ss,colgroup,s,combs=NULL,cols=NULL ,tit= NULL,labs=T,overlap
   ss<-ss[get(idcol)==rownames(pca$x)]
   n<-nrow(pca$rotation)
   
-  lapply(colgroup, function(f) {
+  lapply(colmethod, function(f) {
     if(is.numeric(ss[[f]])){
       myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "RdBu")))
       sc <- scale_colour_gradientn(colours = myPalette(100), limits=range(ss[[f]]))
@@ -690,20 +690,20 @@ surrogate<-function(grset,pheno,condition){
 #' Generate models
 #' @title construct models and contrasts with limma
 #' @param object your object containing beta values
-#' @param group_var the variable used as independent variable
+#' @param method_var the variable used as independent variable
 #' @param covs the set of variables to use as confounders
 #' @param metadata the metadata or sample sheet
 #' @param set a boolean vector to subset the observations
-#' @param gr the group
+#' @param gr the method
 #' @return fit2 ebayes model 
 #' @author izar de Villasante
 #' @export
 # Added rename.
-mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, metadata,set = TRUE,gr=NULL,pairwise = T,
+mod <- function(object,method_var,covs.formula=NULL,contrasts=NULL, covs=NULL, metadata,set = TRUE,gr=NULL,pairwise = T,
                 singular=F,rename=NULL, idcol="barcode"){
   
   metadata<-data.table::setDT(as.data.frame(metadata))
-  if(!is.numeric(metadata[[group_var]]))metadata[,c(group_var):=lapply(.SD,function(x)make.names(x)),.SDcols=c(group_var)]
+  if(!is.numeric(metadata[[method_var]]))metadata[,c(method_var):=lapply(.SD,function(x)make.names(x)),.SDcols=c(method_var)]
   cont_sing=cont_pair=gr_cont_sing=gr_cont_pair=NULL
   metadata<-subset(metadata,set)
   metadata<-droplevels(metadata)
@@ -712,7 +712,7 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
     if (!is.null(covs)&length(covs)>0)covs.formula<-paste0("+",paste0(covs,collapse=" + ",sep=""))
     design <- model.matrix(
       formula(
-        paste("~ 0 +" , paste0(group_var),covs.formula,sep= " " )
+        paste("~ 0 +" , paste0(method_var),covs.formula,sep= " " )
       ),
       data = metadata
     )
@@ -721,12 +721,12 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
   }
   colnames(design)<-make.names(colnames(design))
   fit <- limma::lmFit(object,design)
-  cols <- with(metadata,paste0(group_var, unique(get(group_var))))
+  cols <- with(metadata,paste0(method_var, unique(get(method_var))))
   if(pairwise == T){
     cont_pair <- apply(combn(cols,2),2,function(x) paste(x,collapse = "-"))
     
     if(!is.null(gr)) {
-      gr_cols <- sapply(gr,function(x)contgroup(x,colnames(design)))
+      gr_cols <- sapply(gr,function(x)contmethod(x,colnames(design)))
       gr_cont_pair <- apply(combn(gr_cols,2),2,function(x) paste(x,collapse = "-"))
     }
   }
@@ -735,16 +735,16 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
   if(singular == T){
     cont_sing<-apply(combn(cols,length(cols)-1),2,function(x){
       var <- setdiff(cols,x)
-      group <- contgroup(group_var,levels=x)
-      contrast <- paste0(var,"-", group)
+      method <- contmethod(method_var,levels=x)
+      contrast <- paste0(var,"-", method)
       return(contrast)
     } )
     if(!is.null(gr)) {
-      gr_cols <- sapply(gr,function(x)contgroup(x,colnames(design)))
+      gr_cols <- sapply(gr,function(x)contmethod(x,colnames(design)))
       gr_cont_sing <- apply(combn(gr_cols,length(gr_cols)-1),2,function(x){
         var <- setdiff(gr_cols,x)
-        group <- contgroup(group_var,levels=x)
-        contrast <- paste0(var,"-", group)
+        method <- contmethod(method_var,levels=x)
+        contrast <- paste0(var,"-", method)
         return(contrast)
       } )
     }
@@ -771,7 +771,7 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
   colnames(contMatrix)[large] <- sapply(
     colnames(contMatrix)[large], function(x) paste0("sing_",strsplit(x,"-")[[1]][1]))
   
-  # remove group_var prefix:
+  # remove method_var prefix:
   out<-tryCatch(
     {
       # Just to highlight: if you want to use more than one 
@@ -781,11 +781,11 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
       # in case the "try" part was completed successfully
       if(!is.null(rename)){colnames(contMatrix)<-rename
       # return("custom renamed")
-      }else{colnames(contMatrix)<-stringi::stri_replace_all_fixed(colnames(contMatrix), group_var, "", vectorize_all = FALSE)
+      }else{colnames(contMatrix)<-stringi::stri_replace_all_fixed(colnames(contMatrix), method_var, "", vectorize_all = FALSE)
       # return("NULL rename, automatic names")
       }
     },error = function(cond) {
-      colnames(contMatrix) <- stringi::stri_replace_all_fixed(colnames(contMatrix), group_var, "", vectorize_all = FALSE)
+      colnames(contMatrix) <- stringi::stri_replace_all_fixed(colnames(contMatrix), method_var, "", vectorize_all = FALSE)
       message(cond)
       # Choose a return value in case of error
       # return("some error, automatic names")
@@ -797,7 +797,7 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
   return(fit2)
 }
 
-# mod <- function(object,group_var,contrasts=NULL, covs=NULL, metadata,set = TRUE,gr=NULL,pairwise = T,
+# mod <- function(object,method_var,contrasts=NULL, covs=NULL, metadata,set = TRUE,gr=NULL,pairwise = T,
 #                 singular=F){
 #   data.table::setDT(as.data.frame(metadata))
 #   cont_sing=cont_pair=gr_cont_sing=gr_cont_pair=NULL
@@ -808,17 +808,17 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
 #   if (!is.null(covs)&length(covs)>0)covs_formula<-paste0("+",paste0(covs,collapse=" + ",sep=""))
 #   design <- model.matrix( 
 #     formula(
-#       paste("~ 0 +" , paste0(group_var),covs_formula,sep= " " )
+#       paste("~ 0 +" , paste0(method_var),covs_formula,sep= " " )
 #     ),
 #     data = metadata
 #   )
 #   fit <- limma::lmFit(object,design)
-#   cols <- with(metadata,paste0(group_var, unique(get(group_var))))
+#   cols <- with(metadata,paste0(method_var, unique(get(method_var))))
 #   if(pairwise == T){
 #     cont_pair <- apply(combn(cols,2),2,function(x) paste(x,collapse = "-"))
 #     
 #     if(!is.null(gr)) { 
-#       gr_cols <- sapply(gr,function(x)contgroup(x,colnames(design)))
+#       gr_cols <- sapply(gr,function(x)contmethod(x,colnames(design)))
 #       gr_cont_pair <- apply(combn(gr_cols,2),2,function(x) paste(x,collapse = "-"))
 #     }
 #   }
@@ -827,16 +827,16 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
 #   if(singular == T){
 #     cont_sing<-apply(combn(cols,length(cols)-1),2,function(x){
 #       var <- setdiff(cols,x)
-#       group <- contgroup(group_var,levels=x)
-#       contrast <- paste0(var,"-", group)
+#       method <- contmethod(method_var,levels=x)
+#       contrast <- paste0(var,"-", method)
 #       return(contrast)
 #     } )
 #     if(!is.null(gr)) { 
-#       gr_cols <- sapply(gr,function(x)contgroup(x,colnames(design)))
+#       gr_cols <- sapply(gr,function(x)contmethod(x,colnames(design)))
 #       gr_cont_sing <- apply(combn(gr_cols,length(gr_cols)-1),2,function(x){
 #         var <- setdiff(gr_cols,x)
-#         group <- contgroup(group_var,levels=x)
-#         contrast <- paste0(var,"-", group)
+#         method <- contmethod(method_var,levels=x)
+#         contrast <- paste0(var,"-", method)
 #         return(contrast)
 #       } )
 #     }
@@ -863,22 +863,22 @@ mod <- function(object,group_var,covs.formula=NULL,contrasts=NULL, covs=NULL, me
 #   colnames(contMatrix)[large] <- sapply(
 #     colnames(contMatrix)[large], function(x) paste0("sing_",strsplit(x,"-")[[1]][1]))
 #   
-#   # remove group_var prefix:
-#   colnames(contMatrix) <- stringi::stri_replace_all_fixed(colnames(contMatrix), group_var, "", vectorize_all = FALSE)
+#   # remove method_var prefix:
+#   colnames(contMatrix) <- stringi::stri_replace_all_fixed(colnames(contMatrix), method_var, "", vectorize_all = FALSE)
 #   fit2 <- limma::contrasts.fit(fit, contMatrix)
 #   fit2 <- limma::eBayes(fit2)
 #   return(fit2)
 # }
 
 
-contgroup<-function(name,levels){
+contmethod<-function(name,levels){
   cols<-levels[grepl(name, levels, fixed = TRUE)]
   l<-length(cols)
   paste0("(",paste(cols,collapse = "+"),")/",l)
 }
 
 
-venns<-function(dt,gene_col="overlapping.genes",groupvar="Contrast",res="results/VENN/"){
+venns<-function(dt,gene_col="overlapping.genes",methodvar="Contrast",res="results/VENN/"){
   library(ggvenn)
   library(data.table)
   require(data.table)
@@ -887,11 +887,11 @@ venns<-function(dt,gene_col="overlapping.genes",groupvar="Contrast",res="results
   dir.create(res,recursive = T)
   # Hyper:
   
-  glist<-dt[meandiff>0,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=groupvar]
+  glist<-dt[meandiff>0,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=methodvar]
   geneslist<-data.table::dcast.data.table(glist,V1~Contrast,fill = F)
   pdata<-lapply(geneslist[complete.cases(geneslist),] ,function(x)ifelse(x==F|is.na(x),F,T))|>as.data.table()
   
-  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=groupvar])))
+  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=methodvar])))
   
   g_venn_genes<-ggvenn(
     pdata, 
@@ -900,15 +900,15 @@ venns<-function(dt,gene_col="overlapping.genes",groupvar="Contrast",res="results
     stroke_size = 0.5, set_name_size = 4
   )
   
-  ggsave(paste0("venn_genes_by_",groupvar,"_Hyper.png"),plot=g_venn_genes,path=res)
+  ggsave(paste0("venn_genes_by_",methodvar,"_Hyper.png"),plot=g_venn_genes,path=res)
   
   # Hypo:
   
-  glist<-dt[meandiff<0,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=groupvar]
+  glist<-dt[meandiff<0,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=methodvar]
   geneslist<-data.table::dcast.data.table(glist,V1~Contrast,fill = F)
   pdata<-lapply(geneslist[complete.cases(geneslist),] ,function(x)ifelse(x==F|is.na(x),F,T))|>as.data.table()
   
-  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=groupvar])))
+  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=methodvar])))
   
   g_venn_genes<-ggvenn(
     pdata, 
@@ -917,16 +917,16 @@ venns<-function(dt,gene_col="overlapping.genes",groupvar="Contrast",res="results
     stroke_size = 0.5, set_name_size = 4
   )
   
-  ggsave(paste0("venn_genes_by_",groupvar,"_Hypo.png"),plot=g_venn_genes,path=res)
+  ggsave(paste0("venn_genes_by_",methodvar,"_Hypo.png"),plot=g_venn_genes,path=res)
   
   
   # All:
   
-  glist<-dt[,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=groupvar]
+  glist<-dt[,unique(unlist(sapply(strsplit(overlapping.genes,","),"["))),by=methodvar]
   geneslist<-data.table::dcast.data.table(glist,V1~Contrast,fill = F)
   pdata<-lapply(geneslist[complete.cases(geneslist),] ,function(x)ifelse(x==F|is.na(x),F,T))|>as.data.table()
   
-  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=groupvar])))
+  # levels<-unique(as.character(unlist(glist[,.SD,.SDcols=methodvar])))
   
   g_venn_genes<-ggvenn(
     pdata, 
@@ -935,7 +935,7 @@ venns<-function(dt,gene_col="overlapping.genes",groupvar="Contrast",res="results
     stroke_size = 0.5, set_name_size = 4
   )
   
-  ggsave(paste0("venn_genes_by_",groupvar,"_All.png"),plot=g_venn_genes,path=res)
+  ggsave(paste0("venn_genes_by_",methodvar,"_All.png"),plot=g_venn_genes,path=res)
   
 
   
@@ -1206,29 +1206,29 @@ path_ppt<-function(){
 }
 
 #' Generate pathway results in an excel sheet. Filters for 
-#' at least topN pathways for each group and all terms with FDR <= FDR. 
+#' at least topN pathways for each method and all terms with FDR <= FDR. 
 #' @title generate results excel sheet for pathway analysis
 #' @param pathway data.table with pathway analysis results compatible
 #'with gopath function output values
-#' @param topN numeric value. Minimum number of terms for each group
-#' @param group .SDcols argument to group by. Could be a single value or
-#' a vector of columns in pathway object to group by. contrast, 
+#' @param topN numeric value. Minimum number of terms for each method
+#' @param method .SDcols argument to method by. Could be a single value or
+#' a vector of columns in pathway object to method by. contrast, 
 #' @param FDR FDR threshols to filter out.
 #' @return plots 
 #' @author izar de Villasante
 #' @export
 #'
-path_results<-function(pathway,topN=50,group="method",pval=0.05,path="results/pathways.csv",cols=NULL){
+path_results<-function(pathway,topN=50,method="method",pval=0.05,path="results/pathways.csv",cols=NULL){
   # pathway<-pathway[FDR<1,]
-  pathway$group<-pathway[[group]]
-  data.table::setorder(pathway,group,FDR)
-  sig_idx <- pathway[,.I[FDR < pval]  ,by=group]$V1
-  head_idx<-pathway[,.I[1:min(..topN,.N)],by=c(group,"Contrast")]$V1
+  pathway$method<-pathway[[method]]
+  data.table::setorder(pathway,method,FDR)
+  sig_idx <- pathway[,.I[FDR < pval]  ,by=method]$V1
+  head_idx<-pathway[,.I[1:min(..topN,.N)],by=c(method,"Contrast")]$V1
   res<-pathway[base::union(sig_idx,head_idx),]
   res[,TERM:=ifelse(FDR<pval,paste0("*** ",TERM," ***"),TERM)]
   # data.table::fwrite(res,path)
-  results<-res[,.SD,.SDcols=c("Contrast","FDR",cols,"TERM")]
-  return(res)
+  results<-res[,.SD,.SDcols=c("Contrast","FDR",cols,"TERM","method")]
+  return(results)
 }
 
 gopath2 <- function(object,all.cpg=NULL,n=Inf,ann=NULL,array.type = "EPIC"){
@@ -1364,11 +1364,11 @@ gopath2 <- function(object,all.cpg=NULL,n=Inf,ann=NULL,array.type = "EPIC"){
 # 
 # 
 #         dt_ann[,.(
-#           GROUP=unlist(tstrsplit(UCSC_RefGene_Group, ";")),
+#           method=unlist(tstrsplit(UCSC_RefGene_method, ";")),
 #           SYMBOL=unlist(tstrsplit(UCSC_RefGene_Name, ";"))
 #           ),by=c("Name","sig")]->dt_eg
 # 
-#         dt_eg<-dt_eg[GROUP %in% genomic.features,]
+#         dt_eg<-dt_eg[method %in% genomic.features,]
 # 
 #         dt_eg<-unique(dt_eg)
 #         dt_eg$alias <- suppressWarnings(limma::alias2SymbolTable(dt_eg$SYMBOL))
@@ -1383,7 +1383,7 @@ gopath2 <- function(object,all.cpg=NULL,n=Inf,ann=NULL,array.type = "EPIC"){
 #         dt_eg[,id:=paste0(Name,".",SYMBOL)]
 #         merge(dt_eg,eg,by.x="SYMBOL",by.y="SYMBOL",all.x=T)->dtmp
 #         merge(dt_eg,eg,by.x="alias",by.y="SYMBOL",all.x=T)->dtmp2
-#         merge(dtmp,dtmp2,by=c("id","sig","alias","SYMBOL","Name","GROUP"))->dtmp3
+#         merge(dtmp,dtmp2,by=c("id","sig","alias","SYMBOL","Name","method"))->dtmp3
 #         dtmp3[,ENTREZID:=ifelse(is.na(ENTREZID.x),ENTREZID.y,ENTREZID.x)]
 # 
 #         # Remove trash vars:
@@ -1417,7 +1417,7 @@ gopath2 <- function(object,all.cpg=NULL,n=Inf,ann=NULL,array.type = "EPIC"){
 #           sig.flat <- flat.u[!is.na(m1),]
 #         } else {
 #           # select only CpGs that map to certain genomic features
-#           sig.flat <- flat.u[!is.na(m1) & flat.u$group %in% genomic.features, ]
+#           sig.flat <- flat.u[!is.na(m1) & flat.u$method %in% genomic.features, ]
 #         }
 # 
 #         fract <- data.frame(weight=pmin(tapply(1/sig.flat$multimap,

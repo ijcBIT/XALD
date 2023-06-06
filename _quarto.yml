@@ -13,7 +13,7 @@ website:
   
   page-footer:
     right: "This page is built with ❤️ and [Quarto](https://quarto.org/)."
-    left: "&copy; CC-By IJC-Bit, 2022"
+    left: "&copy; CC-By IJC-Bit, 2023"
     
   sidebar:
     # logo: "data/img/logo.png"

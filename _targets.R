@@ -85,11 +85,11 @@ samplesheets <- c(
 values <- tibble::tibble(
   method_function = c(rep(rlang::syms(c("noob")),6),rlang::syms("swan"),rlang::syms("swan")),
   data_paths = c(m1 = "data/ss_Adults.rds",
-                 m2a = "data/ss_Cereb.rds",
-                 m2 = "data/ss_Cereb.rds",
-                 m3 = "data/ss_Cereb.rds",
+                 m2a = "data/ss_NoCereb.rds",
+                 m2 = "data/ss_NoCereb.rds",
+                 m3 = "data/ss_NoCereb.rds",
                  m4 = "data/SS.rds",
-                 m5 = "data/ss_Cereb.rds",
+                 m5 = "data/ss_NoCereb.rds",
                  mparams = "data/SS.rds",
                  mparams_full = "data/ss_Adults.rds"
                  ),
@@ -126,7 +126,7 @@ top_betas_N_target <- tar_target(top_betas_N,c(100,1000,5000,10000),deployment =
 
 targets <- tarchetypes::tar_map(
   # !!!!! tar_target(dmps_f , filter_dmps(dmpsod1, p.value = 0.01, mDiff = 0.05) ¡¡¡¡ & minfi::preprocessswan
-  values = values[7:8,],
+  values = values[7,],
 
   names = data_names, #"data_source", # Select columns from `values` for target names.
   tar_target(fparams,                                                            # Save paths & parameters
@@ -142,15 +142,16 @@ targets <- tarchetypes::tar_map(
   #   arraytype="EPIC",force = T,ncores=ncores,folder="analysis/intermediate/"),     # force=TRUE for different nrows
   #   deployment = "worker", resources = tar_resources(                              # deploymernt = worker for parallel
   #     future = tar_resources_future(resources = list(n_cores = ncores)))),
-  tar_target(nrgSet,                                                             # Reads idats
-             cnv.methyl::read.metharray.exp.par(
-               folder = paste(data_names,"/analysis/intermediate/"), targets = ss,
-               extended = T, force = T,ncores=ncores),
-             deployment = "worker",
-             # resources = tar_resources(
-             #   future = tar_resources_future(resources = list(n_cores = ncores))
-             # )
-             ),
+  # tar_target(nrgSet,                                                             # Reads idats
+  #            cnv.methyl::read.metharray.exp.par(
+  #              folder = paste(data_names,"/analysis/intermediate/"), targets = ss,
+  #              extended = T, force = T,ncores=ncores),
+  #            deployment = "worker",
+  #            # resources = tar_resources(
+  #            #   future = tar_resources_future(resources = list(n_cores = ncores))
+  #            # )
+  #            ),
+  tar_target(nrgSet, minfi::read.metharray.exp(targets = ss)),
 
 #   tar_target(QC_plots, qc(                                                       # Makes qc plots:qcReport, density, beanplot, mean_qc 
 #     rgSet,sampGroups = "Sample_Group",sampNames="barcode",

@@ -20,5 +20,9 @@ Since the results from this conventional analysis where not satisfying we then t
 
 This second approach allowed us to give an answer to the above questions.
 
-1. We identified a particular set of age-related genes that were differentially methylated for the XALD + cerebral in adult patients.
+1. We identified a particular set of age-related genes that were differentially methylated for the XALD + cerebral condition in adult patients for specific sites that had been previously reported to be related with age.
+
+See @tbl-adult_z-test_cov_model
+
+
 2. We identified the main pathways associated with the disease.

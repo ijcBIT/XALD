@@ -14,7 +14,7 @@ options(digits=2)
 library(cnv.methyl)
 library(minfi)
 library(data.table)
-library(targets)
+# library(targets)
 library(SummarizedExperiment)
 library(S4Vectors)
 source("../meth_functions.R")
@@ -216,7 +216,7 @@ library(S4Vectors)
 ss <- readRDS("data/SS.rds")
 ss_ctl <- ss[Type=="Control",]
 
-rgSet <- cnv.methyl::read.metharray.exp.par(targets=ss_ctl,ncores = 36,folder = "analysis/intermediate/")
+# rgSet <- cnv.methyl::read.metharray.exp.par(targets=ss_ctl,ncores = 36,folder = "analysis/intermediate/")
 rgSet <- minfi::read.metharray.exp(targets = ss_ctl)
 
 mset <- name_rgset(rgSet,ss_ctl,exclude="206702460034_R05C01",newname="Sample_Name")
@@ -750,7 +750,7 @@ The next question we have to answer is if the methylation of the age_related pro
 Since we only have childs with the cerebral condition, and we believe that the disease could behave differently in childs and adults, we will first only focus in adults with AMN, cAMN (AMN + cerebral) and controls.
 
 ```{r}
-library(targets)
+# library(targets)
 library(data.table)
 ss_adults <- readRDS("data/ss_Adults.rds")
 
@@ -1091,6 +1091,13 @@ betas_res <- lapply(names(models),function(model_name){
 })
 names(betas_res)<-names(models)
 
+
+names(betas_res)<-names(models)
+dtb_res <- rbindlist(betas_res)
+dtbm_res <- melt(dtb_res, value.name = "bVal",)
+dtbm_res <- dtbm_res[Condition!="Age"]
+dtbm_res$model <- "covariate"
+
 b2_dt <- as.data.table(res,keep.rownames = "cg")
 b2_m <- melt(b2_dt,variable.name = "Sample_Name", value.name = "bVal")
 b2_res<-merge(b2_m,ss_adults[,.SD, .SDcols=c("Sample_Name", "Age","Condition")])
@@ -1172,40 +1179,93 @@ We see that cAMD looks the more extreme
 
 ##### top10 Beta vs age plot {#sec-betas_age_plot}
 
-Here we inspect the top DMP sites individually.
-
+Here we inspect the top DMP sites individually. We selected the top 10 DMPs for each of the contrasts:
 ```{r}
-#| column: page
-#| layout-ncol: 2
+table(dmp10$Contrast)
+```
 
-topDMPs<-dmp10[dmp10[,probe] %in% betas_age$cg,]
+
+
+```{r top_probes_contrast, fig.height=72, dpi=200}
+#| column: page
+#| layout-ncol: 1
 
 library(ggplot2)
 library(gridExtra)
+
+
 setkey(pdata_indiv,cg)
-plts<-lapply(
-  unique(topDMPs$probe),
-  function(ProbeID){
-    dt_mean <- pdata_indiv[ProbeID,list(b=mean(bVal),avage=mean(Age)),by=c("Condition","model")]
-    
-    print(ProbeID)
-    p<-ggplot(pdata_indiv[ProbeID,], aes(x = Age, y = bVal, color=Condition, group=factor(model) )) +
+dt_ind_cov<-pdata_indiv[model=="covariate",]
+
+dmp10[,cg:=probe]
+dt10_p<-dmp10[,list(Contrast=Contrast,cg=probe, Relation_to_Island= Relation_to_Island)]
+dtp <-merge(dt_ind_cov, dt10_p) 
+
+
+dt_mean <- dtp[,list(b=mean(bVal),avage=mean(Age)),by=c("Condition","model","cg")]
+p_Contrasts<-ggplot(dtp, aes(x = Age, y = bVal, color=Condition, group=factor(model) )) +
     geom_point() +
+    ylim(0, 1) +
     geom_point(data=dt_mean,aes(x=avage,y=b,col=Condition),size=4,shape=24)  +
     geom_smooth(aes(group=Condition),
               method = "lm", formula = y ~ x, se = F) +
 
-    labs(title=paste0('Residual vs. Age for: ',ProbeID), x='Age', y='Residuals')  
-    
-    return(p)
-    
-  })
-sapply(plts,function(x)plot(x))
-# p<-do.call("grid.arrange",c(plts, ncol=2))
-# grid.arrange(grobs = plts, ncol = 2) ## display plot
+    labs(title=paste0('Beta values vs. Age: top 10 sites by Contrast '), x='Age', y='Residuals') +
+      facet_grid(cg ~ Contrast, margins = F)
+p_Contrasts
+
+
+# plts<-lapply(
+#   unique(topDMPs$probe),
+#   function(ProbeID){
+#     dt_mean <- dt_plot[ProbeID,list(b=mean(bVal),avage=mean(Age)),by=c("Condition","model")]
+#     
+#     print(ProbeID)
+#     p<-ggplot(dt_plot[ProbeID,], aes(x = Age, y = bVal, color=Condition, group=factor(model) )) +
+#     geom_point() +
+#     ylim(0, 1) +
+#     geom_point(data=dt_mean,aes(x=avage,y=b,col=Condition),size=4,shape=24)  +
+#     geom_smooth(aes(group=Condition),
+#               method = "lm", formula = y ~ x, se = F) +
+# 
+#     labs(title=paste0('Residual vs. Age for: ',ProbeID), x='Age', y='Residuals') + 
+#       facet_grid(vars(cg))
+#     
+#     return(p)
+#     
+#   })
+# sapply(plts,function(x)plot(x))
+# # p<-do.call("grid.arrange",c(plts, ncol=2))
+# # grid.arrange(grobs = plts, ncol = 2) ## display plot
 # plot(p)
 ```
 
+```{r top_probes_all, fig.height=72, dpi=200}
+#| column: page
+#| layout-ncol: 1
+
+library(ggplot2)
+library(gridExtra)
+
+
+
+dt_overall <- dt10[Contrast != "Disease-Control",]
+dtp_overall <-merge(dt_ind_cov,head(dt_overall[order(-abs(Beta_difference)),list(cg=probe, Contrast=Contrast)],20))
+dt_mean2 <- dtp_overall[,list(b=mean(bVal),avage=mean(Age)),by=c("Condition","model","cg")]
+
+p_overall<-ggplot(dtp_overall, aes(x = Age, y = bVal, color=Condition, group=factor(model) )) +
+    geom_point() +
+    ylim(0, 1) +
+    geom_point(data=dt_mean2,aes(x=avage,y=b,col=Condition),size=4,shape=24)  +
+    geom_smooth(aes(group=Condition),
+              method = "lm", formula = y ~ x, se = F) +
+
+    labs(title=paste0('Beta values vs. Age: top 10 sites by Contrast '), x='Age', y='Residuals') +
+      facet_grid(cg ~ Contrast, margins = F)
+p_overall
+
+
+```
 
 
 
@@ -1241,7 +1301,7 @@ Lets test:
 #### Significance test:
 
 ```{r model covariate t.test}
-#| label: tbl-adult.z-test cov model
+#| label: tbl-adult_z-test_cov_model
 #| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
 pdata_res<-pdata[model == "covariate",]
 zt<-list()
@@ -1300,7 +1360,7 @@ kableExtra::kbl(ztab)|>kableExtra::kable_classic_2()
 ```
 
 ```{r model residuals t.test}
-#| label: tbl-adult.z-test residuals model
+#| label: tbl-adult_z-test_residuals_model
 #| tbl-cap: "Adult Disease vs Adult Controls methylation distributions significance test."
 pdata_res<-pdata[model == "residuals",]
 zt<-list()
